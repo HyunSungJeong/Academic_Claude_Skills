@@ -17,7 +17,7 @@
 \setlength{\parindent}{0pt}
 \setlength{\emergencystretch}{3em}
 
-\title{\textbf{pdf-to-markdown}\\[2pt]\large Release notes, version 2.2}
+\title{\textbf{pdf-to-markdown}\\[2pt]\large Release notes, version 2.3}
 \author{}
 \date{11 October 2026}
 
@@ -33,7 +33,14 @@ notes and textbooks into Markdown with LaTeX mathematics. Every formula is
 transcribed from page images rather than from the PDF's text layer, then checked
 mechanically and proofread against the original.
 
-Version 2.2 makes the skill cheaper to run without changing how formulas are
+Version 2.3 adds figures. Each figure is found from its caption, rendered whole
+by a script, and embedded in the Markdown as image data, so the result is one
+self-contained \file{.md} file. Claude writes only a placeholder and the
+caption, never the image data, so figures add almost no tokens. On an
+eight-page, two-column PNAS paper all seven figures were found, cropped
+completely and embedded byte for byte.
+
+Version 2.2 made the skill cheaper to run without changing how formulas are
 read: page strips are rendered at 170\,dpi instead of 300\,dpi, the text layer is
 no longer read page by page, every token of output is written once, and the
 preparation script prints everything the transcription needs on one line per
@@ -42,8 +49,9 @@ page. On the five-page test note this is estimated to cut a run from about
 blind legibility test and an open blind transcription of two unseen pages, both
 without a single error (Section~\ref{sec:tests}).
 
-The evidence still comes from born-digital, single-column documents only. The
-known limitations in Section~\ref{sec:limits}, in particular scanned PDFs and
+The transcription evidence still comes from born-digital, single-column
+documents only; figure extraction has been tested on one two-column journal
+paper. The known limitations in Section~\ref{sec:limits}, in particular scanned PDFs and
 two-column layouts, should be read before relying on the skill elsewhere.
 
 \section*{Version history}
@@ -65,6 +73,9 @@ Version & Change \\
 2.2 & Token efficiency: strips at 170\,dpi; no page-by-page reading of the text
       layer; per-page output files joined by the new \file{assemble.py};
       compact \file{prepare.py} printout. No change to the transcription rules. \\
+2.3 & Figures: new \file{figures.py} finds figures by caption and renders them;
+      \file{assemble.py} embeds them as base64 data, giving one self-contained
+      file. Text and math handling unchanged. \\
 \bottomrule
 \end{tabularx}
 
@@ -101,8 +112,12 @@ File & Role \\
   lines, a text layer for searching single words, the share of characters set in
   math fonts, and the equation numbers printed at the right margin. Prints one
   line per page: image or text, each strip with its $y$-range in points, tags. \\
+\file{scripts/figures.py} & Finds each figure from its caption, renders the
+  whole region at 200\,dpi, and writes a low-resolution check image with the crop
+  outlined in red. \\
 \file{scripts/assemble.py} & Joins the per-page Markdown files in page order;
-  rejoins a paragraph that a page break interrupted. \\
+  rejoins a paragraph that a page break interrupted; replaces figure
+  placeholders with the embedded images. \\
 \file{scripts/check.py} & Every formula must render in KaTeX; every printed
   equation number must appear exactly once as \texttt{\textbackslash tag\{\}}; no
   text-layer debris. \\
@@ -120,7 +135,37 @@ Writing conventions enforced by \file{SKILL.md}: typefaces reproduced exactly
 $\mathrm e$ where printed so); printed equation numbers used in
 \texttt{\textbackslash tag\{\}}, even when out of sequence; zoomed crops at
 500--600\,dpi before deciding any multi-character bar such as $\overline{j+1}$
-versus $\bar{j}+1$, any tilde, hat or prime, and the extent of every brace.
+versus $\bar{j}+1$, any tilde, hat or prime, and the extent of every brace;
+each figure as a placeholder \texttt{![Fig.\ N](figure:figN)} followed by its
+caption, transcribed like any other text.
+
+\section{What changed in 2.3}
+
+\begin{itemize}
+\item \textbf{Figure detection by caption.} \file{figures.py} looks for text
+  blocks starting ``Fig.~N'', ``Figure~N'' or ``FIG.~N''. The figure is everything
+  graphical directly above the caption and within its column (vector paths,
+  embedded images and the small text inside them, such as axis labels), up to
+  the nearest line of running prose. Decorative graphics without a caption,
+  such as journal badges and ORCID icons, are ignored automatically.
+\item \textbf{Rendering instead of extracting.} Physics figures are usually
+  composites: vector line art with small embedded raster pieces such as heatmaps
+  and colorbars. Extracting the embedded images would yield fragments, so the
+  whole region is rendered at 200\,dpi. A PNG larger than 1.5\,MB is saved as
+  JPEG instead.
+\item \textbf{Crop checks.} For every figure a low-resolution view of its
+  surroundings is written with the crop drawn as a red box; Claude confirms that
+  nothing is cut off. Several check images can be combined into one view.
+\item \textbf{Embedding by script.} In the page Markdown Claude writes
+  \texttt{![Fig.\ N](figure:figN)} and the caption. \file{assemble.py}
+  replaces each placeholder with a base64 data URI and stops with an error if an
+  image is missing. Writing the data by hand would cost tens of thousands of
+  output tokens per figure; this way the cost is a few hundred tokens of crop
+  checking per figure.
+\item \textbf{Instructions.} \file{SKILL.md} gains the figure step, the
+  placeholder convention, a rule never to view the assembled file whole (the
+  image data is large) and a note on viewer support.
+\end{itemize}
 
 \section{What changed in 2.2}
 
@@ -176,7 +221,9 @@ Two documents with their LaTeX sources were available as ground truth: a
 five-page note on Eq.~(40) of Kugler, Lee \& von Delft (``Kugler note'') and a
 ten-page note on particle--vortex duality (``duality note''). Both are
 single-column and born-digital (pdf\TeX). All transcriptions were made from the
-images before the source was opened.
+images before the source was opened. Figure extraction was tested on a third
+document without source: Lihm, Kiese, Lee \& Kugler, PNAS \textbf{123},
+e2525308123 (2026), eight pages in two columns (``PNAS paper'').
 
 \subsection*{Accuracy on the Kugler note}
 
@@ -274,6 +321,32 @@ separately (\file{page3\_comparison\_kit.zip}); Marker's model weights are hoste
 on \file{models.datalab.to} and \file{huggingface.co}, which Claude's sandbox
 cannot reach, so the kit must be run locally.
 
+\subsection*{Figure extraction}
+
+\begin{tabularx}{\linewidth}{@{}Lr@{}}
+\toprule
+Measure & PNAS paper \\
+\midrule
+Figures found (captions ``Fig.~1''--``Fig.~7'') & 7 / 7 \\
+Crops complete, no running text inside & 7 / 7 \\
+Decorative graphics wrongly taken as figures & 0 \\
+Embedded images byte-identical to the rendered files & 7 / 7 \\
+Caption formulas passing KaTeX & 48 / 48 \\
+Size of the self-contained file & 835\,KB \\
+\bottomrule
+\end{tabularx}
+
+The seven figures sit in both columns of the page layout and include vector
+diagrams, plots and embedded heatmaps. Crops were checked on the check images
+and, for the one doubtful edge (the frame of panel~C in Fig.~7), on the full
+image. Captions were transcribed from caption crops; one bar was resolved by
+zooming ($\lambda_{\overline{\mathrm M}}$ with a bar, the following
+$\tilde S_{\mathrm M}$ without). The figure-free Kugler note assembled
+byte-identically to version 2.2, and \file{check.py} still passed. Extraction,
+crop checks and caption reading for all seven figures cost about
+2{,}500 tokens. The caption accuracy was not scored, since the paper's source was
+not available.
+
 \section{Changes considered and not made}
 
 \begin{itemize}
@@ -298,9 +371,18 @@ cannot reach, so the kit must be run locally.
 \item \textbf{Scanned PDFs (serious).} A scan has no fonts, so \file{prepare.py}
   reports every page as \texttt{text-ok}. Until fixed, scanned pages must be
   transcribed from images regardless of what the printout says.
-\item \textbf{Two-column layouts.} Equation numbers are detected only in the right
-  quarter of the page, so left-column equations are missed by the tag checklist;
-  proofreading crops span the full page width and include the other column.
+\item \textbf{Two-column layouts.} Strips run across both columns, so reading
+  order between strips is not guaranteed; equation numbers are detected only in
+  the right quarter of the page, so left-column equations are missed by the tag
+  checklist; proofreading crops span the full page width and include the other
+  column. Figure extraction is not affected, since each caption defines its own
+  column. A full two-column paper has therefore not been converted yet.
+\item \textbf{Figures.} A figure is found only if its caption lies below it and
+  starts with ``Fig.'', ``Figure'' or ``FIG.''; captions above the figure, other
+  labels such as ``Scheme~1'', figures split across columns or pages, and tables
+  set as graphics need a manual crop. Text inside figures is part of the image
+  and not searchable. Embedded images display in most desktop Markdown editors
+  and previews; some web renderers strip data URIs.
 \item \textbf{Dotted equation numbers.} Tags such as (5.40) are not recognised.
   \file{check.py} then reports a correctly transcribed
   \texttt{\textbackslash tag\{5.40\}} as ``not printed in PDF'' and fails.
@@ -319,7 +401,7 @@ cannot reach, so the kit must be run locally.
   proofreading sheet about 1{,}500. A ten-page note fits in one conversation;
   long papers and books should be converted one section or chapter at a time.
 \item \textbf{Narrow evidence.} Accuracy results come from seven transcribed
-  pages of two documents of the same kind.
+  pages of two documents of the same kind; figure extraction from one paper.
 \end{itemize}
 
 \section{Installation and requirements}
@@ -333,10 +415,12 @@ during testing (PyMuPDF 1.28.2).
 
 \section{Planned next}
 
-Accept dotted equation numbers; show uncompilable equations as placeholder
-panels and crop \texttt{align} lines and large symbols correctly; treat every
-page without a text layer as image-only; detect columns and crop each one
-separately; test on a two-column journal page and a scanned textbook page; run
-the Marker comparison locally.
+Support two-column layouts by detecting columns and cutting strips, finding
+equation numbers and cropping proofreading panels per column, then convert a
+full two-column paper; detect figures whose caption is above them or labelled
+differently; accept dotted equation numbers; show uncompilable equations as
+placeholder panels and crop \texttt{align} lines and large symbols correctly;
+treat every page without a text layer as image-only and test on a scanned
+textbook page; run the Marker comparison locally.
 
 \end{document}
