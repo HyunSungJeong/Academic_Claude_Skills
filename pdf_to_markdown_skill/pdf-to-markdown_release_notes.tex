@@ -21,7 +21,6 @@
 \author{}
 \date{11 October 2026}
 
-
 \begin{document}
 \maketitle
 \vspace{-3em}
@@ -29,37 +28,25 @@
 \section*{Summary}
 
 \file{pdf-to-markdown} is a Claude skill that converts PDFs of physics papers,
-notes and textbooks into Markdown with LaTeX mathematics. Every formula is
+notes and textbooks into files for a Claude Project: a text-only Markdown file,
+named exactly like the original PDF, in which every equation is written in
+LaTeX, and one companion PDF holding the document's figures. Every formula is
 transcribed from page images rather than from the PDF's text layer, then checked
 mechanically and proofread against the original.
 
-Version 2.4 delivers each conversion as files for a Claude Project: a text-only
-Markdown file named exactly like the original PDF, with every equation in
-LaTeX and no image data inside, plus one companion image per figure. Each
-figure appears in the Markdown as a link naming its companion file, followed by
-the transcribed caption. Version 2.3 had embedded the images in the Markdown as
-base64 text; Claude cannot see images in that form, and they cost roughly a
-hundred times more tokens than the same images uploaded as files, so 2.4
-replaces it.
+Section~\ref{sec:why} analyses what this gains over uploading the original PDF.
+In short: about 20--30\% less Project capacity per paper with all figures
+included, and up to 40--45\% without them; exact equations instead of a garbled
+text layer or small page images; content that remains searchable when a large
+Project switches to retrieval; and, the largest effect, no image-reading work
+whenever a conversation refers to equations, which saves an estimated
+20{,}000--47{,}000 tokens in an equation-heavy chat. A conversion costs about
+35{,}000--45{,}000 tokens for an eight-page paper once, so it pays for itself
+within one or two such chats.
 
-Version 2.3 added figures. Each figure is found from its caption and rendered
-whole by a script; Claude writes only a placeholder and the caption, never image
-data, so figures add almost no tokens. On an eight-page, two-column PNAS paper
-all seven figures were found and cropped completely.
-
-Version 2.2 made the skill cheaper to run without changing how formulas are
-read: page strips are rendered at 170\,dpi instead of 300\,dpi, the text layer is
-no longer read page by page, every token of output is written once, and the
-preparation script prints everything the transcription needs on one line per
-page. On the five-page test note this is estimated to cut a run from about
-45{,}000 to about 30{,}000 tokens. The lower resolution was adopted only after a
-blind legibility test and an open blind transcription of two unseen pages, both
-without a single error (Section~\ref{sec:tests}).
-
-The transcription evidence still comes from born-digital, single-column
-documents only; figure extraction has been tested on one two-column journal
-paper. The known limitations in Section~\ref{sec:limits}, in particular scanned PDFs and
-two-column layouts, should be read before relying on the skill elsewhere.
+All figures in this note are estimates unless stated as measured. The evidence
+comes from born-digital documents; transcription has been tested on
+single-column documents only (Section~\ref{sec:limits}).
 
 \section*{Version history}
 
@@ -67,351 +54,293 @@ two-column layouts, should be read before relying on the skill elsewhere.
 \toprule
 Version & Change \\
 \midrule
-1.0 & Draft only, never packaged. markitdown converted each page; pages whose
-      text contained many mathematical Unicode characters were re-transcribed by
-      Claude from 200\,dpi page images. \\
-2.0 & First packaged release. markitdown removed for PDFs; math detected by font;
-      strips cut between text lines; mechanical checks (\file{check.py}) and
-      side-by-side proofreading (\file{verify\_eqs.py}) added; evaluation
-      scripts added. \\
-2.1 & Scorer (\file{scripts/eval/mathcmp.py}) rewritten: content-based alignment,
-      tolerance for spelling-only variants, \cmd{--lenient} option, exact-match
-      counts. No change to conversion. \\
-2.2 & Token efficiency: strips at 170\,dpi; no page-by-page reading of the text
-      layer; per-page output files joined by the new \file{assemble.py};
-      compact \file{prepare.py} printout. No change to the transcription rules. \\
-2.3 & Figures: new \file{figures.py} finds figures by caption and renders them;
-      \file{assemble.py} embeds them as base64 data, giving one self-contained
-      file. Text and math handling unchanged. \\
+1.0 & Draft, never packaged: markitdown text plus re-transcription of
+      ``math-heavy'' pages from 200\,dpi images. \\
+2.0 & First release: math transcribed from strips cut between lines;
+      \file{check.py} and \file{verify\_eqs.py}; evaluation scripts. \\
+2.1 & Scorer rewritten: content-based alignment, tolerance for spelling-only
+      variants, \cmd{--lenient}, exact-match counts. \\
+2.2 & Token efficiency: 170\,dpi strips, no page-by-page reading of the text
+      layer, per-page output joined by \file{assemble.py}, compact printout. \\
+2.3 & Figures: \file{figures.py} finds figures by caption and renders them;
+      first delivered embedded in the Markdown. \\
 2.4 & Output for Projects: text-only Markdown named exactly like the PDF, plus
-      companion images \texttt{NAME\_figN.png} linked from it; embedding
-      removed. \\
+      \file{NAME\_figures.pdf} packed adaptively (at least 150\,dpi per figure);
+      embedding removed. Within 2.4 the figure delivery moved from separate
+      image files to a zip and then to the figures PDF, the only form a Project
+      accepts as one file. \\
 \bottomrule
 \end{tabularx}
 
-\section{Why version 1.0 was replaced}
+\section{What the skill does}
 
-Version~1.0 was run on the test document and compared with its LaTeX source.
-The text layer, through markitdown or otherwise, proved unusable for mathematics:
-
-\begin{itemize}
-\item \textbf{Invented tables.} markitdown 0.1.5 split ordinary sentences on page~2
-  into 60 rows of Markdown table cells.
-\item \textbf{Lost typefaces.} Calligraphic $\mathcal G$ and roman $\mathrm G$ both
-  came out as the same letter G, and bold $\bm\omega$ as a plain $\omega$. The test note's
-  notation rests on exactly this distinction.
-\item \textbf{Detached accents.} $\tilde{\mathrm K}=1/\Omega_{\bar 1}$ was extracted
-  as \texttt{K = 1 \~{} /}$\Omega$\texttt{\textasciimacron 1}, the tilde moved off the K and next to the 1.
-\item \textbf{Placeholder glyphs.} Integral and sum signs and brace pieces leaked
-  as \verb|(cid:90)|, \verb|(cid:88)| and similar codes.
-\item \textbf{Useless page flagging.} The Unicode-count rule flagged all five
-  pages, since every page of a physics note contains mathematics.
-\item \textbf{Broken paragraphs.} Page markers landed in the middle of sentences
-  that continue across a page break.
-\end{itemize}
-
-\section{What version 2 does}
+A conversion runs in six steps, all described in \file{SKILL.md}:
+\begin{enumerate}[label=\arabic*.]
+\item \file{prepare.py} cuts every page into 170\,dpi strips at the gaps between
+  lines and prints, per page, the strips with their positions and the printed
+  equation numbers. \file{figures.py} finds the figures and writes crop-check
+  images.
+\item Claude views the strips and writes each page as Markdown to its own file,
+  zooming to 500--600\,dpi wherever a bar, tilde, prime, typeface or brace
+  extent is in doubt.
+\item Writing conventions: printed equation numbers in \texttt{\textbackslash
+  tag\{\}}; typefaces exactly as printed ($\mathcal K$, $\mathrm K$,
+  $\bm\Omega$, upright $\mathrm i$, $\mathrm d$, $\mathrm e$ where so printed);
+  a placeholder for each figure followed by its transcribed caption; paragraphs
+  joined across page breaks.
+\item \file{assemble.py} joins the pages, writes the two output files, and
+  \file{check.py} tests every formula in KaTeX, the equation numbers against the
+  PDF, and the absence of text-layer debris.
+\item \file{verify\_eqs.py} re-typesets each numbered equation under the PDF's
+  original for a symbol-by-symbol proofread.
+\item Claude delivers \file{NAME.md} and, if there are figures,
+  \file{NAME\_figures.pdf}.
+\end{enumerate}
 
 \begin{tabularx}{\linewidth}{@{}lL@{}}
 \toprule
 File & Role \\
 \midrule
-\file{SKILL.md} & Instructions to Claude: ground rules, the six-step procedure,
-  writing conventions, context budget. \\
-\file{scripts/prepare.py} & Per page: 170\,dpi strips cut in the gaps between
-  lines, a text layer for searching single words, the share of characters set in
-  math fonts, and the equation numbers printed at the right margin. Prints one
-  line per page: image or text, each strip with its $y$-range in points, tags. \\
-\file{scripts/figures.py} & Finds each figure from its caption, renders the
-  whole region at 200\,dpi, and writes a low-resolution check image with the crop
-  outlined in red. \\
-\file{scripts/assemble.py} & Joins the per-page Markdown files in page order;
-  rejoins a paragraph that a page break interrupted; writes \file{NAME.md} and
-  the companion images \file{NAME\_figN.png}, turning each figure placeholder
-  into a link to its file. \\
-\file{scripts/check.py} & Every formula must render in KaTeX; every printed
-  equation number must appear exactly once as \texttt{\textbackslash tag\{\}}; no
-  text-layer debris. \\
-\file{scripts/verify\_eqs.py} & Retypesets each numbered display equation with
-  pdflatex and places it under the PDF's original, four equations per sheet. \\
-\file{scripts/eval/mathcmp.py} & Formula-by-formula comparison with a LaTeX
-  source; works on any tool's Markdown (testing only). \\
-\file{scripts/eval/prosecmp.py} & Word-by-word prose comparison with a LaTeX
-  source (testing only). \\
+\file{SKILL.md} & Instructions: ground rules, procedure, conventions, budget. \\
+\file{scripts/prepare.py} & Strips, a searchable text layer, math-font share and
+  equation numbers per page; one printed line per page. \\
+\file{scripts/figures.py} & Finds each figure from its caption, renders the whole
+  region at 200\,dpi, writes a check image with the crop outlined. \\
+\file{scripts/assemble.py} & Joins the pages; writes \file{NAME.md}; packs the
+  figures into \file{NAME\_figures.pdf} and writes the page reference for each. \\
+\file{scripts/check.py} & KaTeX syntax, equation numbers, debris. \\
+\file{scripts/verify\_eqs.py} & Side-by-side proofreading sheets. \\
+\file{scripts/eval/} & \file{mathcmp.py} and \file{prosecmp.py}: scoring
+  against a LaTeX source (testing only). \\
 \bottomrule
 \end{tabularx}
 
-Writing conventions enforced by \file{SKILL.md}: typefaces reproduced exactly
-($\mathcal K$, $\mathrm K$, $\bm\Omega$, upright $\mathrm i$, $\mathrm d$,
-$\mathrm e$ where printed so); printed equation numbers used in
-\texttt{\textbackslash tag\{\}}, even when out of sequence; zoomed crops at
-500--600\,dpi before deciding any multi-character bar such as $\overline{j+1}$
-versus $\bar{j}+1$, any tilde, hat or prime, and the extent of every brace;
-each figure as a placeholder \texttt{![Fig.\ N](figure:figN)} followed by its
-caption, transcribed like any other text.
+\textbf{Output naming.} \texttt{NAME} is the original PDF's file name without
+\texttt{.pdf}, unchanged: same characters, case, spaces and underscores. In
+\file{NAME.md} each figure appears as a line such as
+\texttt{*[Fig.\ 4: NAME\_figures.pdf, page 1]*} followed by its caption, so
+Claude knows where to look.
 
-\section{What changed in 2.4}
+\section{Why Markdown instead of the original PDF}
+\label{sec:why}
 
-\begin{itemize}
-\item \textbf{Why.} Converted files are meant to be uploaded to a Claude
-  Project. Claude reads Markdown as text: a base64 image inside it is an
-  unreadable string of characters, not a picture. For the seven PNAS figures it
-  is an estimated 280{,}000--420{,}000 tokens (at 2--3 characters per token),
-  against about 3{,}400 tokens for the same figures uploaded as PNG files, and it
-  alone would push a Project close to its context limit, where retrieval mode
-  takes over and searches the files in chunks.
-\item \textbf{Text-only Markdown.} \file{assemble.py} no longer embeds images.
-  Each placeholder \texttt{![Fig.\ N](figure:figN)} becomes a relative link
-  \texttt{![Fig.\ N](<NAME\_figN.png>)}, and the image is copied to the output
-  folder under that name. The script refuses to write a Markdown file that
-  contains image data.
-\item \textbf{File names.} \texttt{NAME} is the original PDF's file name
-  without \texttt{.pdf}, unchanged: same characters, case, spaces and
-  underscores. The companion images are \file{NAME\_fig1.png},
-  \file{NAME\_fig2.png}, \dots, so figures of different papers cannot collide in
-  one Project, and the link in the Markdown tells Claude which file shows which
-  figure. In a folder holding both, a Markdown viewer also displays the figures.
-\item \textbf{Delivery.} Claude presents the Markdown first and then the
-  companion images in figure order, in one delivery, ready to upload. Images can
-  be added to a Project only where Claude needs to see a figure; the captions
-  stay in the text either way.
-\item \textbf{Embedding removed.} The self-contained file of version 2.3 is no
-  longer produced, to avoid two output modes being mixed up.
-\end{itemize}
+All numbers in this section are estimates for the eight-page, two-column PNAS
+paper used in testing (Lihm, Kiese, Lee \& Kugler, PNAS \textbf{123},
+e2525308123, 2026), based on Anthropic's published approximation for image
+tokens (width $\times$ height $/750$ after scaling to at most 1{,}568\,px and
+about 1.15 megapixels) and on character counts for text. None is a metered
+measurement.
 
-\section{What changed in 2.3}
+\subsection{What Claude receives}
 
-\begin{itemize}
-\item \textbf{Figure detection by caption.} \file{figures.py} looks for text
-  blocks starting ``Fig.~N'', ``Figure~N'' or ``FIG.~N''. The figure is everything
-  graphical directly above the caption and within its column (vector paths,
-  embedded images and the small text inside them, such as axis labels), up to
-  the nearest line of running prose. Decorative graphics without a caption,
-  such as journal badges and ORCID icons, are ignored automatically.
-\item \textbf{Rendering instead of extracting.} Physics figures are usually
-  composites: vector line art with small embedded raster pieces such as heatmaps
-  and colorbars. Extracting the embedded images would yield fragments, so the
-  whole region is rendered at 200\,dpi. A PNG larger than 1.5\,MB is saved as
-  JPEG instead.
-\item \textbf{Crop checks.} For every figure a low-resolution view of its
-  surroundings is written with the crop drawn as a red box; Claude confirms that
-  nothing is cut off. Several check images can be combined into one view.
-\item \textbf{Embedding by script} (replaced by companion files in 2.4). In the
-  page Markdown Claude writes \texttt{![Fig.\ N](figure:figN)} and the caption.
-  \file{assemble.py} replaced each placeholder with a base64 data URI and stopped
-  with an error if an image was missing. Writing the data by hand would cost tens of thousands of
-  output tokens per figure; this way the cost is a few hundred tokens of crop
-  checking per figure.
-\item \textbf{Instructions.} \file{SKILL.md} gains the figure step, the
-  placeholder convention, a rule never to view the assembled file whole (the
-  image data is large) and a note on viewer support.
-\end{itemize}
+From a PDF, Claude receives the extracted text and, for each page, an image.
+The text layer garbles mathematics: calligraphic and roman letters merge, bold
+is lost, accents detach (in testing, $\tilde{\mathrm K}=1/\Omega_{\bar 1}$ came
+out as \texttt{K = 1 \~{} /}$\Omega$\texttt{\textasciimacron 1}), and big operators
+become placeholder codes. A full page squeezed into one image is seen at only
+about 111--114\,dpi, close to where subscripts, bars and primes became uncertain
+in the legibility test (Section~\ref{sec:tests}). From the Markdown, Claude
+receives every equation as exact LaTeX text, with no reading involved.
 
-\section{What changed in 2.2}
-
-\begin{itemize}
-\item \textbf{Strips at 170\,dpi.} \file{prepare.py} now renders strips at
-  170\,dpi by default. At 300\,dpi a strip was about 2{,}000\,px wide and was
-  downscaled by the model to an effective 232\,dpi anyway; at 170\,dpi it is about
-  1{,}100\,px wide and is seen as rendered. Strip tokens fall by about 46\%.
-\item \textbf{No reading of the text layer.} \file{SKILL.md} forbids reading
-  \file{page\_NNN.txt} as a whole; it may only be searched for one doubtful word.
-  Prose read from the strips was error-free in every test.
-\item \textbf{Every token of output written once.} Each page is written with
-  \cmd{create\_file} to its own \file{page\_NNN.md}. A page ending mid-paragraph
-  ends with the line \texttt{<!-- continues -->}. \file{assemble.py} joins the
-  pages and rejoins such paragraphs; corrections after checking and proofreading
-  are targeted \cmd{str\_replace} edits. The document is never re-typed.
-\item \textbf{Compact script output.} \file{prepare.py} prints one line per page
-  with the strip files, their $y$-ranges in points (for zooms) and the equation
-  tags, so \file{manifest.json} never needs to be opened.
-\item \textbf{Proofreading printout.} Step~5 now requires reading the full output
-  of \file{verify\_eqs.py} first: a \texttt{PROBLEM} line marks an equation that
-  could not be typeset and is therefore missing from the sheets. This is an
-  instruction only; the script itself is unchanged.
-\item \textbf{Documentation.} \cmd{--lenient}, exact-count reading of scores and
-  scoring other tools' output are now described in \file{SKILL.md}.
-\end{itemize}
-
-Estimated tokens for one run on the five-page test note:
+\subsection{Project capacity}
 
 \begin{tabularx}{\linewidth}{@{}Lrr@{}}
 \toprule
-Item & 2.1 & 2.2 \\
+Uploaded per paper & Tokens & Papers in $\sim$200K \\
 \midrule
-Page strips & 21{,}000 & 11{,}000 \\
-Proofreading sheets (7) & 10{,}000 & 10{,}000 \\
-Output Markdown & 6{,}000 & 6{,}000 \\
-Text layer read in full & up to 3{,}200 & 0 \\
-Second copy of the output when assembling & up to 6{,}000 & 0 \\
-Zooms, \file{SKILL.md}, manifest, script output & 5{,}000 & 4{,}000 \\
-\midrule
-Total & \textasciitilde 45{,}000--51{,}000 & \textasciitilde 31{,}000 \\
+Original PDF (text layer $\sim$15--19K + 8 page images $\sim$12K) & 27{,}000--31{,}000 & 5--6 \\
+\file{NAME.md} + \file{NAME\_figures.pdf} (3 pages, $\sim$3{,}600) & 19{,}000--24{,}000 & 7--9 \\
+\file{NAME.md} only & 15{,}000--20{,}000 & 8--11 \\
+\file{NAME.md} without the reference list & 10{,}000--14{,}000 & 12--16 \\
 \bottomrule
 \end{tabularx}
 
-Image tokens use Anthropic's published approximation of width $\times$
-height$/750$ after downscaling to a 1{,}568\,px long edge; treat them as
-estimates.
+The text costs about the same in both forms (58{,}000 characters for this
+paper); the saving comes from replacing eight full-page images by three pages of
+figures, or by none. With all figures included the Markdown route uses about
+20--30\% less capacity; without the figures PDF, about 40--45\% less. Leaving
+out the reference list, a third of this paper's text, saves more than any choice
+about figures. Project knowledge is read into every conversation of the Project,
+so the same percentages apply to the standing cost of each chat.
+
+When a Project's knowledge approaches the context limit, Claude switches to
+retrieval and searches the files instead of reading them whole. Clean LaTeX and
+text are found by such a search; the content of page images is not.
+
+\subsection{Working with equations in a chat}
+
+Reading an equation reliably from a PDF means the careful route of the
+academic-pdf-reading skill: its instructions (measured: about 5{,}200 tokens),
+a triage of the file, locating the equation, and a cropped, enlarged image of it
+for every equation, followed by a transcription.
+
+\begin{tabularx}{\linewidth}{@{}Lrr@{}}
+\toprule
+Extra cost & Image route & Markdown \\
+\midrule
+Setup per chat (instructions, triage) & $\sim$6{,}000--7{,}000 & 0 \\
+Per equation question, new tokens & $\sim$1{,}500--4{,}000 & $\sim$0 \\
+Per equation question, tool round trips & 4--7 & 0 \\
+\bottomrule
+\end{tabularx}
+
+The crop images themselves are cheap (about 100--250 tokens); the cost is the
+work around them. Two scenarios:
+
+\begin{tabularx}{\linewidth}{@{}Lrrr@{}}
+\toprule
+Scenario & Extra new tokens & Round trips & Cached re-reads \\
+\midrule
+10 equation questions in one chat & 21{,}000--47{,}000 & 40--70 & 1.5--2.5\,M \\
+10 equations referred to 10 times each, each read once and reused & 21{,}000--47{,}000 & 40--70 & 1.5--2.5\,M \\
+the same, each re-read from the image every time & 95{,}000--270{,}000 & 220--340 & 9--14\,M \\
+Markdown in the Project, any of the above & $\sim$0 & 0 & 0 \\
+\bottomrule
+\end{tabularx}
+
+Reusing an equation once read is what a careful run does, but long chats are
+summarised automatically near the context limit, which can discard the crops and
+force re-reading. Every round trip re-reads the conversation; cached reads count
+less towards usage limits than new tokens, but not nothing. In an
+equation-heavy chat the saving is therefore three to six times the standing
+capacity saving of a paper, and it grows with the length of the chat.
+
+\subsection{Accuracy}
+
+The Markdown is verified once, at conversion, with checks and proofreading.
+Reading from the PDF repeats the risk of a misreading in every chat, and a
+misread equation that is reused carries the error into every later reference.
+
+\subsection{Break-even}
+
+A conversion costs about 4{,}000--5{,}500 tokens per page, about
+35{,}000--45{,}000 for an eight-page paper, once. That is roughly one
+equation-heavy chat on the image route, so the conversion pays for itself within
+one or two such chats and keeps paying afterwards.
+
+\subsection{Caveats}
+
+\begin{itemize}
+\item Whether PDFs in Project knowledge are given page images, as PDFs attached
+  in a chat are, has not been verified. If Projects use only the extracted text,
+  the original PDF takes about as much capacity as the Markdown alone: no saving
+  in capacity, but garbled equations and invisible figures remain.
+\item Chats that are mostly conceptual and rarely touch equations gain little
+  beyond the capacity saving.
+\item Two-column papers such as the PNAS test paper cannot yet be converted
+  reliably as text (Section~\ref{sec:limits}); for them the comparison above
+  becomes available once column support is built.
+\item Before relying on the numbers, compare the usage panel before and after
+  one chat of each kind.
+\end{itemize}
+
+\subsection{Recommendations}
+
+Upload \file{NAME.md} for every paper. Add \file{NAME\_figures.pdf} only for
+papers whose figures you will discuss; the captions are always in the text.
+Consider removing the reference list from papers whose references you do not
+need Claude to read.
+
+\section{Figures and adaptive packing}
+
+\textbf{Detection.} \file{figures.py} anchors each figure on its caption (a text
+block starting ``Fig.~N'', ``Figure~N'' or ``FIG.~N''). The figure is everything
+graphical above the caption within its column, up to the nearest running text.
+The region is rendered whole at 200\,dpi, because physics figures are usually
+composites of vector art and small embedded images such as heatmaps, which
+extraction would split into fragments. Decorative graphics without a caption are
+ignored. A check image with the crop outlined in red is viewed for every figure.
+
+\textbf{Packing.} Claude sees a PDF page as one image of at most about
+1.15 megapixels, roughly 1{,}500 tokens. More figures per page cost fewer tokens
+each but get fewer pixels. \file{assemble.py} places figures at native size in
+order of appearance and starts a new page when the next figure would push the
+page below 150\,dpi effective: an area of about 50 square inches or a long edge
+of about 10 inches. 150\,dpi is the level at which small labels stayed reliably
+legible in testing. A large figure shares its page with at most one small one; a
+figure too large for any page goes alone and is reported. Each figure is labelled
+``Fig.~N'', and the Markdown names its page.
+
+\begin{tabularx}{\linewidth}{@{}Lrrr@{}}
+\toprule
+Fixed figures per page (model, PNAS figures) & Pages & Effective dpi & Tokens \\
+\midrule
+2 & 4 & 190--205 & $\le$5{,}800 \\
+3 & 3 & 150--165 & $\le$4{,}600 \\
+4 & 2 & 150--155 & $\le$3{,}100 \\
+6 & 2 & $\sim$120 & $\le$3{,}100 \\
+7 & 1 & $\sim$110 & $\le$1{,}500 \\
+\midrule
+Adaptive rule (actual output) & 3 & 152, 183, 200 & $\sim$3{,}600 \\
+\bottomrule
+\end{tabularx}
+
+The adaptive rule packed the seven figures 4, 2 and 1 per page: adding the
+seventh to page~2 would have taken that page below the floor. Bundling does not
+reduce tokens below separate images of equal legibility (the seven figures as
+200\,dpi PNGs: about 3{,}300 tokens); its value is a single file that a Project
+accepts.
 
 \section{Test results}
 \label{sec:tests}
 
-Two documents with their LaTeX sources were available as ground truth: a
-five-page note on Eq.~(40) of Kugler, Lee \& von Delft (``Kugler note'') and a
-ten-page note on particle--vortex duality (``duality note''). Both are
-single-column and born-digital (pdf\TeX). All transcriptions were made from the
-images before the source was opened. Figure extraction was tested on a third
-document without source: Lihm, Kiese, Lee \& Kugler, PNAS \textbf{123},
-e2525308123 (2026), eight pages in two columns (``PNAS paper'').
-
-\subsection*{Accuracy on the Kugler note}
-
-\begin{tabularx}{\linewidth}{@{}Lrr@{}}
-\toprule
-Measure & Whole document & Page 3 \\
-\midrule
-Displayed equations exactly correct & 25 / 26 & 8 / 8 \\
-Inline formulas exactly correct & 143 / 147 & 38 / 38 \\
-Prose & identical & 162 / 162 words \\
-\file{check.py} (KaTeX, tags, debris) & pass & pass \\
-\bottomrule
-\end{tabularx}
-
-The five whole-document mismatches render identically to the source:
-\verb|F_{\rm rest}| versus \verb|F_{\mathrm{rest}}|, the arrow written as the
-Unicode character U+21D2 instead of \verb|$\Rightarrow$|, parentheses outside
-rather than inside \verb|$...$|, and ``K-part'' written as text. With the 2.2
-pipeline (per-page files, \file{assemble.py}, \file{check.py},
-\file{verify\_eqs.py}) the assembled document was identical to the original
-transcription and scored the same.
-
-\subsection*{Blind legibility test (basis for 170\,dpi)}
-
-Sixteen items, each with two or three near-identical variants (for example
-$\omega'$ versus $\omega$, a bar over $j+1$ versus over $j$ alone, $\mathcal K$
-versus $\mathrm K$, $\tilde{\mathrm K}$ versus $\hat{\mathrm K}$, $+$ versus $-$ in
-an exponent, swapped indices) were typeset in the note's fonts. A script drew one
-variant per item at random for each resolution and kept the key hidden until all
-readings were recorded.
-
-\begin{tabularx}{\linewidth}{@{}Lrrrrrr@{}}
-\toprule
-Effective resolution (dpi) & 232 & 200 & 170 & 145 & 120 & 100 \\
-\midrule
-Image tokens relative to 232\,dpi & 100\% & 74\% & 54\% & 39\% & 27\% & 19\% \\
-Items read correctly & 16/16 & 16/16 & 16/16 & 16/16 & 16/16 & 16/16 \\
-\bottomrule
-\end{tabularx}
-
-The test is forced-choice (the candidate variants were known), which is easier
-than open transcription; at 120 and 100\,dpi about five readings felt uncertain,
-at 145\,dpi and above none did except one overbar extent. 170\,dpi was chosen to
-keep a wide margin.
-
-\subsection*{Open blind transcription at 170\,dpi}
-
-Pages 4 and 6 of the duality note, chosen as the two pages with the most
-math-font characters, were transcribed from 170\,dpi strips without zooms. Their
-hazards include tildes on $\phi$ and $f_{\mu\nu}$, daggers, integral limits
-$\int_x^\infty$ versus $\int_\infty^x$, signs in exponents and a primed $n'$.
-
-\begin{tabularx}{\linewidth}{@{}Lrrr@{}}
-\toprule
-Page & Displayed equations & Inline formulas & Prose \\
-\midrule
-4 & 4/4 & 34/34 & identical \\
-6 & 6/6 & 36/36 & identical \\
-\bottomrule
-\end{tabularx}
-
-All matches are strict (no \cmd{--lenient}). Caveat: the prose of these pages
-was already known from the text layer; only the mathematics was unseen.
-
-\subsection*{Proofreading test}
-
-Errors of random type were planted, with a hidden key, in random equations of a
-copy of the Kugler transcription; the sheets from \file{verify\_eqs.py} were then
-reviewed cold.
-
-\begin{tabularx}{\linewidth}{@{}Lrrrr@{}}
-\toprule
-Round & Planted & Caught on sheets & Caught by compile/KaTeX & Missed \\
-\midrule
-1 & 1 & 1 & -- & 0 \\
-2 & 8 & 5 & 3 & 0 \\
-\bottomrule
-\end{tabularx}
-
-Errors caught on the sheets were a dropped prime, three dropped bolds, a dropped
-bar and $\mathcal K$ turned roman; there were no false alarms. Three planted
-errors produced LaTeX that does not compile, so their equations never reached
-the sheets; the verifier reported them, but only in its text output, which led
-to the new instruction in step~5. Limits: nine errors in total, no sign flips
-or index swaps among them, and compile failures are partly an artifact of how
-the errors were planted.
-
-\textbf{Scorer validation.} Four realistic errors planted in the page-3
-transcription were all flagged at the right places, while spelling-only variants
-still scored 8/8 and 38/38. With the errors present the mean token similarity
-stayed at 0.993 and 0.999, which is why only exact counts are meaningful.
-
-\textbf{Not yet tested against Marker.} A page-3 comparison kit is provided
-separately (\file{page3\_comparison\_kit.zip}); Marker's model weights are hosted
-on \file{models.datalab.to} and \file{huggingface.co}, which Claude's sandbox
-cannot reach, so the kit must be run locally.
-
-\subsection*{Figure extraction}
+\textbf{Documents.} Kugler note (five pages, single column, with LaTeX source);
+duality note (ten pages, single column, with source); PNAS paper (eight pages,
+two columns, no source). All transcriptions were made from images before the
+source was opened.
 
 \begin{tabularx}{\linewidth}{@{}Lr@{}}
 \toprule
-Measure & PNAS paper \\
+Test & Result \\
 \midrule
-Figures found (captions ``Fig.~1''--``Fig.~7'') & 7 / 7 \\
-Crops complete, no running text inside & 7 / 7 \\
-Decorative graphics wrongly taken as figures & 0 \\
-Caption formulas passing KaTeX & 48 / 48 \\
-2.3: embedded images byte-identical to the rendered files & 7 / 7 \\
-2.3: size of the self-contained file & 835\,KB \\
-2.4: size of the text-only Markdown & 5\,KB \\
-2.4: companion images, correctly named and linked & 7 / 7 \\
+Kugler note, whole document & 25/26 displays, 143/147 inline exact; prose identical \\
+Kugler note, page 3 (densest notation) & 8/8 displays, 38/38 inline exact \\
+Duality note, pages 4 and 6, open blind at 170\,dpi & 10/10 displays, 70/70 inline, strict \\
+Blind legibility, 16 items $\times$ 6 resolutions (232--100\,dpi) & 96/96 correct (forced choice) \\
+Proofreading, 9 planted errors & 6 caught on sheets, 3 by compile check, 0 missed \\
+Scorer, 4 planted errors & 4/4 flagged; spelling variants forgiven \\
+Figures (PNAS): found, crops complete, decorations ignored & 7/7, 7/7, 0 false \\
+Figure captions (PNAS) in KaTeX & 48/48 \\
+Figures PDF, most crowded page viewed at $\sim$151\,dpi & all labels legible \\
+Output names, including \texttt{My Paper (2026) v2.PDF} & exact; references correct \\
 \bottomrule
 \end{tabularx}
 
-The seven figures sit in both columns of the page layout and include vector
-diagrams, plots and embedded heatmaps. Crops were checked on the check images
-and, for the one doubtful edge (the frame of panel~C in Fig.~7), on the full
-image. Captions were transcribed from caption crops; one bar was resolved by
-zooming ($\lambda_{\overline{\mathrm M}}$ with a bar, the following
-$\tilde S_{\mathrm M}$ without). The figure-free Kugler note assembled
-byte-identically to version 2.2, and \file{check.py} still passed. Extraction,
-crop checks and caption reading for all seven figures cost about
-2{,}500 tokens. The caption accuracy was not scored, since the paper's source was
-not available.
+The five whole-document mismatches in the Kugler note render identically to the
+source (spelling-only differences such as \verb|F_{\rm rest}| versus
+\verb|F_{\mathrm{rest}}|). In the legibility test, about five readings felt
+uncertain at 120 and 100\,dpi and none at 145\,dpi or above apart from one
+overbar extent. On the most crowded figures page, colorbar exponents, inset tick
+labels, the superscripts of $i_{\mathrm D}^{\mathrm{DMFT}}$ and
+$\tilde I_{\mathrm D}^{\mathbf q=\Gamma}$ and the legend subscripts
+$\mathbf k_{\mathrm N}$, $\mathbf k_{\mathrm{HS}}$, $\mathbf k_{\mathrm{AN}}$ were
+all read without zooming. Caption accuracy of the PNAS paper was not scored,
+because its source was not available. Marker could not be compared: its model
+weights are hosted on sites Claude's sandbox cannot reach; a page-3 comparison
+kit is provided for a local run.
 
-With version 2.4 the same test produced the Markdown file under the PDF's exact
-name and seven companion images named after it, each linked from its figure;
-\file{check.py} passed and no image data remained in the Markdown. The Kugler
-note again assembled to byte-identical text, now under its PDF's name. A file
-name with spaces, parentheses and an upper-case extension
-(\texttt{My Paper (2026) v2.PDF}) gave \file{My Paper (2026) v2.md} with working
-figure links.
+\section{Cost of a conversion}
+
+Per full page: strips about 2{,}400 tokens, Markdown output about 1{,}200,
+proofreading about 380 per numbered equation, zooms 0--500; in total about
+4{,}000--5{,}500, plus about 1{,}400 for \file{SKILL.md} once per conversion.
+Every strip stays in the conversation, so a ten-page note leaves about
+40{,}000--55{,}000 tokens in context: convert one paper or chapter per
+conversation, in a fresh chat. Against a Pro plan's five-hour window, community
+estimates put this at very roughly 1--4\% per page with Opus; Anthropic publishes
+no token figure for the limit.
 
 \section{Changes considered and not made}
 
 \begin{itemize}
-\item \textbf{Selective proofreading (rejected).} Skipping ``simple'' equations
-  would save almost nothing: a classifier skipping only equations without bars,
-  primes, bold, typeface-sensitive letters, accents or braces skips 1 of 26 in
-  the Kugler note. Meanwhile the proofreading test found errors in the plainest
-  equations, such as $\mathcal G(\mathrm i\bm\omega)=0$.
-\item \textbf{Skipping strips without math fonts (deferred).} No strip of the
-  Kugler note and 4 of 39 strips of the duality note (6\% of strip tokens)
-  contain no math-font character; all four were genuinely free of mathematics.
-  8 of the duality note's 195 inline formulas are set entirely in text fonts
-  (\verb|+|, \verb|+1|, \verb|=|) and are invisible to the detector; here none fell
-  in a skippable strip. The change needs scan detection and hyphen repair of
-  text-layer prose first, and the benefit is small.
+\item \textbf{Selective proofreading (rejected).} Errors were found in the
+  plainest equations, and only 1 of 26 equations in the Kugler note would have
+  been skippable.
+\item \textbf{Skipping strips without math fonts (deferred).} Saves 0--6\% of
+  strip tokens, and first needs scan detection and hyphen repair.
+\item \textbf{Images embedded in the Markdown (removed).} Claude cannot see a
+  base64 image in a text file, and it costs an estimated 100 times the tokens of
+  the same image as a file.
 \end{itemize}
 
 \section{Known limitations}
@@ -419,59 +348,40 @@ figure links.
 
 \begin{itemize}
 \item \textbf{Scanned PDFs (serious).} A scan has no fonts, so \file{prepare.py}
-  reports every page as \texttt{text-ok}. Until fixed, scanned pages must be
-  transcribed from images regardless of what the printout says.
-\item \textbf{Two-column layouts.} Strips run across both columns, so reading
-  order between strips is not guaranteed; equation numbers are detected only in
-  the right quarter of the page, so left-column equations are missed by the tag
-  checklist; proofreading crops span the full page width and include the other
-  column. Figure extraction is not affected, since each caption defines its own
-  column. A full two-column paper has therefore not been converted yet.
-\item \textbf{Figures.} A figure is found only if its caption lies below it and
-  starts with ``Fig.'', ``Figure'' or ``FIG.''; captions above the figure, other
-  labels such as ``Scheme~1'', figures split across columns or pages, and tables
-  set as graphics need a manual crop. Text inside figures is part of the image
-  and not searchable. The figure links display an image only when the
-  Markdown and its companion files sit in the same folder; in a Project,
-  Claude sees a figure only if its image file was uploaded too.
-\item \textbf{Dotted equation numbers.} Tags such as (5.40) are not recognised.
-  \file{check.py} then reports a correctly transcribed
-  \texttt{\textbackslash tag\{5.40\}} as ``not printed in PDF'' and fails.
-\item \textbf{Proofreading sheets.} Equations that do not compile are left off the
-  sheets rather than shown as placeholders; adjacent equations of one
-  \texttt{align} environment are merged into one crop; large symbols can be
-  clipped at the crop edge.
-\item \textbf{Fonts.} Math detection matches known math font names. Documents
-  from Word, with unusual fonts, or with bitmap (Type~3) math fonts, as in older
-  arXiv PDFs, may be misclassified.
-\item \textbf{Self-proofreading.} Without a source, the side-by-side check is done
-  by the same model that made the transcription. Sheets cover numbered displays
-  only; unnumbered displays and inline math rely on the syntax check and on
-  re-reading the strips.
-\item \textbf{Context budget.} A 170\,dpi strip costs about 600 tokens and a
-  proofreading sheet about 1{,}500. A ten-page note fits in one conversation;
-  long papers and books should be converted one section or chapter at a time.
-\item \textbf{Narrow evidence.} Accuracy results come from seven transcribed
-  pages of two documents of the same kind; figure extraction from one paper.
+  marks every page \texttt{text-ok}; scanned pages must be transcribed from
+  images regardless.
+\item \textbf{Two-column layouts.} Strips run across both columns; equation
+  numbers are found only in the right quarter of the page; proofreading crops
+  include the other column. Figures are not affected.
+\item \textbf{Figures.} Found only when a caption below them starts with
+  ``Fig.'', ``Figure'' or ``FIG.''; other cases need a manual crop. Text inside
+  figures is part of the image. In a Project, Claude sees figures only if the
+  figures PDF is uploaded.
+\item \textbf{Dotted equation numbers} such as (5.40) are not recognised, so
+  \file{check.py} wrongly fails on them.
+\item \textbf{Proofreading sheets} omit equations that do not compile, merge
+  adjacent \texttt{align} lines, and can clip large symbols.
+\item \textbf{Fonts.} Math detection relies on font names; unusual or bitmap
+  math fonts may be misclassified.
+\item \textbf{Self-proofreading.} Without a source, the same model transcribes
+  and proofreads; sheets cover numbered displays only.
+\item \textbf{Unverified assumptions.} How Projects process PDF pages, and all
+  token figures, are modelled rather than measured.
 \end{itemize}
 
 \section{Installation and requirements}
 
-Upload \file{pdf-to-markdown.zip} in Claude under \emph{Customize $\rightarrow$
-Skills} and make sure code execution is enabled. If an earlier version is
-installed, replace it. The scripts need PyMuPDF and Pillow; \file{verify\_eqs.py}
-needs pdflatex and \file{check.py} needs Node.js, and \file{check.py} installs
-KaTeX itself if it is missing. All of these were present in Claude's sandbox
-during testing (PyMuPDF 1.28.2).
+Upload \file{pdf-to-markdown.zip} under \emph{Customize $\rightarrow$ Skills} with
+code execution enabled, replacing any earlier version. The scripts need PyMuPDF
+and Pillow; \file{verify\_eqs.py} needs pdflatex; \file{check.py} needs Node.js and
+installs KaTeX itself. All were present in Claude's sandbox during testing.
 
 \section{Planned next}
 
-Support two-column layouts by detecting columns and cutting strips, finding
-equation numbers and cropping proofreading panels per column, then convert a
-full two-column paper; detect figures whose caption is above them or labelled
-differently; accept dotted equation numbers; show uncompilable equations as
-placeholder panels and crop \texttt{align} lines and large symbols correctly;
-treat every page without a text layer as image-only and test on a scanned
-textbook page; run the Marker comparison locally.
+Column support for strips, equation numbers and proofreading crops, followed by
+a full two-column conversion; scan detection and a scanned-page test; dotted
+equation numbers; placeholder panels and better crops on the proofreading
+sheets; other caption placements for figures; a metered comparison of Markdown
+and original PDF in a real Project; the Marker comparison, run locally.
 
 \end{document}
