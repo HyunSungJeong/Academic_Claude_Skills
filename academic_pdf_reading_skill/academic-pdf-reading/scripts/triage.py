@@ -27,14 +27,22 @@ Subcommands
                                   any recorded rendition is unchanged. Exit 1 if
                                   stale; exit 3 if the only differences are
                                   probable rendition swaps (confirm them).
-                                  Source files (.tex .md ...) are reported but
-                                  never make the protocol stale.
+                                  Source files (.tex .md ...), pdf-to-markdown
+                                  transcriptions and their figures PDFs are
+                                  reported but never make the protocol stale;
+                                  a recorded document replaced by a
+                                  transcription of it is reported CONVERTED
+                                  (stale: its entry must be rewritten).
   text FILE [N] [--lines A:B] [--escape]
-                                  print the text layer of page N (paged files)
-                                  or a line range (text-only files)
+                                  print the text layer of page N (paged files;
+                                  for a transcription, the text between its
+                                  page markers N and N+1) or a line range
+                                  (text-only files)
   grep PATTERN FILE... [-i] [--escape]
                                   regex search of text layers, reported as
-                                  file:page:line; CRLF-safe
+                                  file:page:line (a transcription reports the
+                                  page from its markers, e.g. p3 or
+                                  p3(printed 1203)); CRLF-safe
   extract FILE --out DIR          paged ZIP -> its members; genuine PDF ->
                                   one N.txt per page via pdftotext
   crop SRC --page N [--box x0 y0 x1 y1] [--scale S] [--dpi D] --out PNG
@@ -62,7 +70,7 @@ import tempfile
 import unicodedata
 import zipfile
 
-TRIAGE_VERSION = "1.2.0"
+TRIAGE_VERSION = "1.3.0"
 
 # ---------------------------------------------------------------- utilities
 
@@ -123,6 +131,87 @@ def escape(s):
 # ---------------------------------------------------------------- container
 
 
+# A pdf-to-markdown transcription is recognised by content, not by extension:
+# its first non-blank line is the legend written by assemble.py,
+#   <!-- Transcription of NAME.pdf. "page N" markers give the PDF page ... -->
+# Page markers  <!-- page N -->  or  <!-- page N (printed M) -->  open every page
+# (inline where a paragraph runs across the break); figures are referenced by
+# lines  *[Fig. N: NAME_figures.pdf, page P]*  .
+TRANSCRIPTION_RX = re.compile(r"\A\s*<!--\s*Transcription of (.+?\.pdf)\.", re.I)
+PAGE_MARK_RX = re.compile(r"<!--\s*page\s+(\d+)(?:\s*\(printed\s+([^)]*?)\s*\))?\s*-->")
+FIG_LINE_RX = re.compile(r"^\*\[Fig\.\s*([^:\]]+?):\s*(.+?\.pdf),\s*page\s+(\d+)\]\*\s*$", re.M)
+CONTINUES_MARK = "<!-- continues -->"
+FIGURES_SUFFIX = "_figures.pdf"
+SOURCE_LIKE = ("source-text", "transcription")
+
+
+def norm_stem(name):
+    """File name reduced for matching across upload renamings: NFKC, lowercase,
+    extension dropped, letters and digits only ('[Lihm 2026] The ...pdf' and
+    'Lihm_2026_The_...pdf' agree)."""
+    stem = re.sub(r"\.(pdf|md)$", "", name, flags=re.I)
+    stem = unicodedata.normalize("NFKC", stem).lower()
+    return "".join(ch for ch in stem if ch.isalnum())
+
+
+def transcription_info(path):
+    """Structure of a pdf-to-markdown transcription (measurements only)."""
+    t = get_whole_text(path).replace("\r", "")
+    m = TRANSCRIPTION_RX.match(t)
+    marks = [(int(a), b or None) for a, b in PAGE_MARK_RX.findall(t)]
+    nums = [n for n, _ in marks]
+    figs = FIG_LINE_RX.findall(t)
+    cont_lines = [i for i, ln in enumerate(t.split("\n"), 1) if CONTINUES_MARK in ln]
+    tags = re.findall(r"\\tag\{([^}]*)\}", t)
+    dup_tags = sorted({x for x in tags if tags.count(x) > 1})
+    here = os.path.dirname(os.path.abspath(path))
+    fig_files = sorted({f for _, f, _ in figs})
+    return {
+        "source_pdf": m.group(1) if m else None,
+        "page_markers": len(marks),
+        "pages": (min(nums), max(nums)) if nums else None,
+        "pages_missing": sorted(set(range(min(nums), max(nums) + 1)) - set(nums)) if nums else [],
+        "pages_out_of_order": nums != sorted(nums),
+        "printed_given": sum(1 for _, p in marks if p),
+        "figure_lines": len(figs),
+        "figure_files": fig_files,
+        "figure_files_missing": [f for f in fig_files if not os.path.isfile(os.path.join(here, f))],
+        "tags": len(tags),
+        "duplicate_tags": dup_tags[:20],
+        "stray_continues_lines": cont_lines,
+    }
+
+
+def transcription_pages(text):
+    """[(N, printed, text)] for the segments between page markers. Text before
+    the first marker (the legend) is dropped."""
+    out, it = [], list(PAGE_MARK_RX.finditer(text))
+    for i, m in enumerate(it):
+        end = it[i + 1].start() if i + 1 < len(it) else len(text)
+        out.append((int(m.group(1)), m.group(2) or None, text[m.end():end]))
+    return out
+
+
+def figures_owner(path):
+    """For NAME_figures.pdf lying next to a transcription NAME.md: that .md's
+    name; else None. Pairing is by file name, as pdf-to-markdown writes it."""
+    base = os.path.basename(path)
+    if not base.lower().endswith(FIGURES_SUFFIX):
+        return None
+    md = os.path.join(os.path.dirname(os.path.abspath(path)), base[:-len(FIGURES_SUFFIX)] + ".md")
+    if os.path.isfile(md) and detect_container(md)[0] == "transcription":
+        return os.path.basename(md)
+    return None
+
+
+def file_kind(path):
+    """Container, refined by role: 'figures' for a transcription's figures PDF."""
+    cont = detect_container(path)[0]
+    if cont == "pdf" and figures_owner(path):
+        return "figures"
+    return cont
+
+
 def detect_container(path):
     """(container, detail), decided by magic bytes -- never by extension."""
     with open(path, "rb") as f:
@@ -142,6 +231,9 @@ def detect_container(path):
         except UnicodeDecodeError as e:
             ok = e.start > len(head) - 4   # multibyte char cut at buffer end
         if ok:
+            m = TRANSCRIPTION_RX.match(head.decode("utf-8", "ignore"))
+            if m:
+                return "transcription", m.group(1)
             ext = os.path.splitext(path)[1].lower()
             if ext in (".tex", ".md", ".bib", ".sty", ".cls"):  # .txt is NOT source: may be an extraction
                 return "source-text", ext
@@ -280,11 +372,33 @@ def notes_for(rec):
         n.append("ZIP without the N.jpeg/N.txt layout: list and inspect members by hand.")
     if cont == "source-text":
         n.append("SOURCE FILE: read directly; it outranks any rendering of it.")
+    if cont == "transcription":
+        ti = rec.get("transcription", {})
+        n.append("TRANSCRIPTION of %s (pdf-to-markdown): read as source (SKILL.md 3.6); "
+                 "quote as-is, math included; cite pages from its markers."
+                 % ti.get("source_pdf"))
+        if not ti.get("page_markers"):
+            n.append("No page markers: printed pages cannot be cited; cite section and equation tag.")
+        if ti.get("pages_missing") or ti.get("pages_out_of_order"):
+            n.append("Page markers incomplete or out of order (missing %s): check the assembly."
+                     % ti.get("pages_missing", [])[:10])
+        if ti.get("stray_continues_lines"):
+            n.append("Stray '<!-- continues -->' on line(s) %s: a page join failed; the prose "
+                     "there may be cut (a structural defect, not a math one)."
+                     % ti["stray_continues_lines"][:10])
+        if ti.get("duplicate_tags"):
+            n.append("Equation tags occurring more than once: %s." % ti["duplicate_tags"])
+        if ti.get("figure_files_missing"):
+            n.append("Figures PDF %s not next to this file: figures cannot be viewed."
+                     % ti["figure_files_missing"])
+    if rec.get("figures_of"):
+        n.append("FIGURES PDF of %s: figure images only (its text is just the labels); "
+                 "nothing to triage. Open the page its placeholder names." % rec["figures_of"])
     if cont == "text-extraction":
         n.append("TEXT-ONLY EXTRACTION (despite its extension): no image channel exists.")
-    if not ch["image"] and cont not in ("source-text",):
+    if not ch["image"] and cont not in SOURCE_LIKE:
         n.append("NO IMAGE CHANNEL: mathematics is text-layer only -> label unverified.")
-    if cont == "pdf":
+    if cont == "pdf" and not rec.get("figures_of"):
         f = rec.get("fonts", {})
         if f.get("no_tounicode"):
             n.append("Fonts without ToUnicode maps %s: text set in these fonts may extract wrongly." % f["no_tounicode"][:5])
@@ -495,6 +609,11 @@ def profile_file(path):
             pg = collections.Counter(int(l.split()[0]) for l in out.splitlines()[2:]
                                      if l.split() and l.split()[0].isdigit())
             rec["raster_images"] = {"pages_with_images": len(pg), "total": sum(pg.values())}
+    elif cont == "transcription":
+        rec["channels"]["text"] = True
+        rec["transcription"] = transcription_info(path)
+        pr = rec["transcription"]["pages"]
+        rec["pages"] = (pr[1] - pr[0] + 1) if pr else None
     elif cont in ("text-extraction", "source-text"):
         rec["channels"]["text"] = True
         txt = get_whole_text(path)
@@ -505,6 +624,9 @@ def profile_file(path):
         rec["channels"]["image"] = True
         rec["pages"] = 1
 
+    if cont == "pdf" and figures_owner(path):
+        rec["figures_of"] = figures_owner(path)
+        pages = None                      # labels only: no folio or text signals
     if pages is not None:
         rec["folio_candidates"] = folio_candidates(pages)
         rec["text_signals"] = text_signals("\n".join(pages))
@@ -522,6 +644,13 @@ def print_profile(r):
         print("  images    : %s  (manifest has_visual_content=true on %s pages)" % (r["image_dims"], r.get("manifest_has_visual_content_true")))
     if "pdfinfo" in r:
         print("  pdfinfo   : %s" % r["pdfinfo"])
+    if "transcription" in r:
+        t = r["transcription"]
+        print("  transcr.  : of %s ; pages %s (%d markers, %d with printed numbers) ; "
+              "%d \\tag ; %d figure lines -> %s"
+              % (t["source_pdf"], "%d-%d" % t["pages"] if t["pages"] else "none",
+                 t["page_markers"], t["printed_given"], t["tags"], t["figure_lines"],
+                 t["figure_files"] or "-"))
     if "fonts" in r:
         f = r["fonts"]
         print("  fonts     : %d  Type3=%d  no-ToUnicode=%d  GlyphLess=%s  e.g. %s" % (f["count"], f["type3"], len(f["no_tounicode"]), f["glyphless_ocr_font"], f["sample"][:4]))
@@ -588,7 +717,7 @@ def prose_sketch(path):
     if pages is not None:
         whole = "\n".join(pages)
         per = [_simhash(_shingles(t)) for t in pages]
-    elif cont in ("text-extraction", "source-text"):
+    elif cont in ("text-extraction", "source-text", "transcription"):
         whole, per = get_whole_text(path), None
     else:
         return None
@@ -636,7 +765,14 @@ def rendition_of(path, with_sketch=True):
     r = {"sha256": sha256_of(path), "size": os.path.getsize(path),
          "container": cont, "pages": pages,
          "first_seen": datetime.date.today().isoformat()}
-    if with_sketch and cont != "source-text":
+    if cont == "transcription":
+        r["source_pdf"] = detect_container(path)[1]
+        pr = transcription_info(path)["pages"]
+        r["pages"] = (pr[1] - pr[0] + 1) if pr else None
+    owner = figures_owner(path) if cont == "pdf" else None
+    if owner:
+        r["role"], r["pairs_with"] = "figures", owner
+    if with_sketch and cont not in SOURCE_LIKE and not owner:
         sk = prose_sketch(path)
         if sk:
             r["sketch"] = sk
@@ -720,7 +856,7 @@ def classify_unknown(path, rends):
               for r in rends if r["container"] == cont]
         extra = "; sketch: %s (%s)" % sk[0] if sk and sk[0][0] == "agree" else ""
         return "changed", "same container (%s), new hash%s" % (cont, extra)
-    if cont == "source-text" or "source-text" in known:
+    if cont in SOURCE_LIKE or known & set(SOURCE_LIKE):
         return "changed", "container %s -> %s" % ("/".join(sorted(known)), cont)
     paged = [r for r in rends if r.get("pages")]
     if cur["pages"] and paged:
@@ -757,24 +893,55 @@ def check(inv_path, root=None, as_json=False):
     rendition until it is updated.
 
     Only document files (PDF, ZIP, text extraction, image, unknown) can make a
-    protocol stale. Source files (.tex .md .bib .sty .cls) need no reading
-    facts -- they are read directly -- so adding, editing or removing one is
-    reported separately and does not count as stale. A file that changes
-    container into or out of 'source-text' does count.
+    protocol stale. Source-like files need no reading facts -- they are read
+    directly -- so adding, editing or removing one is reported separately and
+    does not count as stale. Source-like means: source text (.tex .md .bib
+    .sty .cls), a pdf-to-markdown transcription (recognised by its legend,
+    whatever its extension), and the figures PDF lying next to a
+    transcription (NAME_figures.pdf beside NAME.md). A file that changes
+    between a source-like kind and a document kind does count.
+
+    A recorded document that is gone while a transcription declaring it as
+    its source is present (names compared by norm_stem) is reported CONVERTED.
+    It is stale like any removal: the protocol entry still carries reading
+    facts for a rendition that no longer exists. A new transcription whose
+    source is still recorded and mounted is flagged as pairing with it.
     """
     inv = load_inventory(inv_path)
     root = root or inv.get("root") or "."
     rec = {f["name"]: f["renditions"] for f in inv["files"]}
-    is_src = lambda rs: all(r.get("container") == "source-text" for r in rs)  # noqa: E731
+    srcish = lambda r: r.get("container") in SOURCE_LIKE or r.get("role") == "figures"  # noqa: E731
+    is_src = lambda rs: all(srcish(r) for r in rs)  # noqa: E731
     disk = {n for n in os.listdir(root) if os.path.isfile(os.path.join(root, n))}
     ignored = {n for n in disk if re.fullmatch(r"pdf_protocol_.*\.md", n)}
-    src = "source-text"
+    kind = {n: file_kind(os.path.join(root, n)) for n in disk - ignored}
+    src_kinds = ("source-text", "transcription", "figures")
+    label = {"source-text": "source", "transcription": "transcr.", "figures": "figures"}
+    # transcriptions on disk, by the normalised name of the PDF they transcribe
+    tr_of = {}
+    for n, k in kind.items():
+        if k == "transcription":
+            tr_of.setdefault(norm_stem(detect_container(os.path.join(root, n))[1]), n)
     added, added_src, removed, removed_src = [], [], [], []
     changed, changed_src, swaps, same, mounted = [], [], [], [], []
+    converted, pairs = [], []
     for n in sorted(disk - set(rec) - ignored):
-        (added_src if detect_container(os.path.join(root, n))[0] == src else added).append(n)
+        if kind[n] in src_kinds:
+            added_src.append({"name": n, "kind": kind[n]})
+            if kind[n] == "transcription":
+                tgt = [m for m in rec if m in disk and not is_src(rec[m])
+                       and norm_stem(m) == norm_stem(detect_container(os.path.join(root, n))[1])]
+                if tgt:
+                    pairs.append({"transcription": n, "document": tgt[0]})
+        else:
+            added.append(n)
     for n in sorted(set(rec) - disk):
-        (removed_src if is_src(rec[n]) else removed).append(n)
+        if is_src(rec[n]):
+            removed_src.append(n)
+        elif norm_stem(n) in tr_of:
+            converted.append({"name": n, "transcription": tr_of[norm_stem(n)]})
+        else:
+            removed.append(n)
     for n in sorted(set(rec) & disk):
         p = os.path.join(root, n)
         size, digest, rs = os.path.getsize(p), sha256_of(p), rec[n]
@@ -784,20 +951,24 @@ def check(inv_path, root=None, as_json=False):
             if len(rs) > 1:
                 mounted.append((n, hit["container"], len(rs)))
             continue
-        new = detect_container(p)[0]
-        if is_src(rs) and new == src:
-            changed_src.append({"name": n})
+        new = kind[n]
+        if is_src(rs) and new in src_kinds:
+            changed_src.append({"name": n, "kind": new})
             continue
         verdict, why = classify_unknown(p, rs)
         item = {"name": n, "known": sorted({r["container"] for r in rs}), "new_container": new,
                 "reason": why}
         (swaps if verdict == "swap" else changed).append(item)
-    stale = bool(added or removed or changed)
+    stale = bool(added or removed or changed or converted)
     res = {"root": root, "inventory_generated": inv.get("generated"), "unchanged": same,
            "mounted_renditions": [{"name": n, "container": c, "known": k} for n, c, k in mounted],
-           "added": added, "removed": removed, "changed": changed, "probable_swaps": swaps,
-           "sources_added": added_src, "sources_removed": removed_src,
-           "sources_changed": [c["name"] for c in changed_src], "stale": stale}
+           "added": added, "removed": removed, "converted": converted, "changed": changed,
+           "probable_swaps": swaps,
+           "sources_added": [a["name"] for a in added_src],
+           "sources_removed": removed_src,
+           "sources_changed": [c["name"] for c in changed_src],
+           "source_kinds": {a["name"]: a["kind"] for a in added_src + changed_src},
+           "transcription_pairs": pairs, "stale": stale}
     if as_json:
         print(json.dumps(res, indent=1, ensure_ascii=False))
     else:
@@ -811,18 +982,29 @@ def check(inv_path, root=None, as_json=False):
             print("  ADDED     : " + n)
         for n in removed:
             print("  REMOVED   : " + n)
+        for c in converted:
+            print("  CONVERTED : %s -> %s (original gone; replace its entry by a transcription "
+                  "entry, references/project_protocol.md 6)" % (c["name"], c["transcription"]))
         for c in changed:
             print("  CHANGED   : %s (%s)" % (c["name"], c["reason"]))
         for c in swaps:
             print("  SWAP?     : %s (%s)" % (c["name"], c["reason"]))
-        for n in added_src:
-            print("  source +  : %s (read directly; not stale)" % n)
+        how = {"figures": "view pages on demand; not stale"}
+        for a in added_src:
+            print("  %-8s+ : %s (%s)" % (label[a["kind"]], a["name"],
+                                        how.get(a["kind"], "read directly; not stale")))
+        for q in pairs:
+            print("  pairing   : %s transcribes %s, which is still mounted (read the "
+                  "transcription for content; mention it to the user)"
+                  % (q["transcription"], q["document"]))
         for n in removed_src:
             print("  source -  : %s (not stale; update any pairing that names it)" % n)
         for c in changed_src:
-            print("  source ~  : %s (edited; read directly; not stale)" % c["name"])
+            print("  %-8s~ : %s (edited; read directly; not stale)" % (label[c["kind"]], c["name"]))
         if stale:
             result = "STALE -- re-triage the document files listed above"
+            if converted and not (added or removed or changed):
+                result = "STALE -- only conversions: rewrite those entries (no triage needed)"
         elif swaps:
             result = ("PROBABLE RENDITION SWAP -- content likely unchanged, but the protocol "
                       "has no reading facts for these renditions; read them via the "
@@ -837,6 +1019,13 @@ def check(inv_path, root=None, as_json=False):
 
 
 def cmd_text(path, page, lines, esc):
+    if detect_container(path)[0] == "transcription" and page:
+        segs = [t for n, _, t in transcription_pages(get_whole_text(path).replace("\r", ""))
+                if n == page]
+        if not segs:
+            sys.exit("no page marker for page %d in this transcription" % page)
+        print("".join(segs).strip("\n"))
+        return
     pages = get_pages(path)
     if pages is not None:
         if not page:
@@ -856,6 +1045,9 @@ def cmd_grep(pattern, files, icase, esc):
     rx = re.compile(pattern, re.I if icase else 0)
     hits = 0
     for f in files:
+        if detect_container(f)[0] == "transcription":
+            hits += _grep_transcription(rx, f, esc)
+            continue
         pages = get_pages(f)
         units = list(enumerate(pages, 1)) if pages is not None else [(None, get_whole_text(f))]
         for pg, t in units:
@@ -866,6 +1058,27 @@ def cmd_grep(pattern, files, icase, esc):
                     loc = ("p%d:%d" % (pg, ln_no)) if pg else ("L%d" % ln_no)
                     print("%s:%s: %s" % (os.path.basename(f)[:40], loc, escape(ln) if esc else ln))
     print("-- %d hit(s)" % hits, file=sys.stderr)
+
+
+
+def _grep_transcription(rx, f, esc):
+    """Hits in a transcription, located by its page markers: the page is the
+    one in force at the start of the match (a marker can stand mid-line)."""
+    hits, cur = 0, None
+    for ln_no, ln in enumerate(get_whole_text(f).replace("\r", "").split("\n"), 1):
+        marks = [(m.start(), int(m.group(1)), m.group(2)) for m in PAGE_MARK_RX.finditer(ln)]
+        for m in rx.finditer(ln):
+            pg = cur
+            for pos, n, pr in marks:
+                if pos <= m.start():
+                    pg = (n, pr)
+            hits += 1
+            loc = ("p%d%s" % (pg[0], "(printed %s)" % pg[1] if pg[1] else "")) if pg else "p?"
+            print("%s:%s:L%d: %s" % (os.path.basename(f)[:40], loc, ln_no, escape(ln) if esc else ln))
+            break                                   # one report per line
+        if marks:
+            cur = (marks[-1][1], marks[-1][2])
+    return hits
 
 # ---------------------------------------------------------------- extract / crop
 

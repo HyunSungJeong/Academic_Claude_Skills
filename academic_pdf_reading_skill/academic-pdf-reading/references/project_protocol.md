@@ -1,6 +1,6 @@
 # Generating and maintaining a project-specific PDF protocol
 
-Companion to `SKILL.md` (academic-pdf-reading v1.2.0). Read this when asked to
+Companion to `SKILL.md` (academic-pdf-reading v1.3.0). Read this when asked to
 **create**, **update**, or **review** a project protocol, or when the staleness
 check reports a mismatch and the user wants the protocol brought up to date.
 
@@ -34,6 +34,16 @@ their basis; structural maps (where appendices, references, index start);
 per-file grep conventions (equation-tag form, citation form); project-specific
 traps; a changelog.
 
+For a **pdf-to-markdown transcription** (`SKILL.md` §3.6) the entry is short,
+because there is nothing to triage:
+- the document it transcribes, and the PDF it replaced in this project, if any;
+- pages covered, and whether printed numbers differ from PDF pages (`printed`
+  in the markers, or "printed = PDF page, verified at conversion");
+- its figures PDF;
+- any structural defect the profile reports;
+- where the original lives, if the user keeps it outside the project.
+Its figures PDF needs no entry of its own beyond the inventory line.
+
 **Does not belong:**
 - *General mechanisms* already in `SKILL.md` — refer to them ("mode B applies")
   instead of restating them. Restated rules drift.
@@ -56,6 +66,8 @@ Work through the files in order; keep notes as you go.
    `pdf_protocol_*.md` automatically).
 2. **Container and channels** for each file, from the profile. Note anything
    surprising (a `.pdf` that is text; a ZIP that is not a paged archive).
+   Transcriptions and their figures PDFs skip steps 3–6: record their entry
+   as §2 says, from the profile's `transcr.` line and notes.
 3. **Failure modes.** For each file with a text channel, compare against the
    image: one displayed equation, one inline formula, one prose paragraph, and
    one figure caption. Record which of modes A, B, C are present, and where
@@ -115,8 +127,9 @@ are read-only, and skills are global). So:
 
 Triggered by a stale check, or by the user.
 
-Source-file changes (`source +/-/~` in the check output) never trigger an
-update on their own; the inventory may lag behind them. Fold them in at the
+Source-like changes (`source`, `transcr.` and `figures` lines in the check
+output) never trigger an update on their own; the inventory may lag behind
+them. Fold them in at the
 next update that happens for another reason: add inventory entries for new
 sources, record any source–rendering pairing in the paired document's entry
 ("`X.tex` supersedes this file for content; keep the rendering for figures"),
@@ -126,6 +139,16 @@ and drop entries for removed sources and any pairing that names them.
   its inventory entry.
 - **Removed file:** delete its entry and every fact that depends on it; note the
   removal in the changelog (future readers should know it once existed).
+- **Converted file** (`CONVERTED X -> Y.md`: the document X is gone and a
+  transcription Y of it is present): no triage.
+  1. Retire all of X's renditions and every container-dependent fact
+     (glyph mappings, control bytes, pixel boxes, line endings).
+  2. Replace X's entry by a transcription entry for Y (§2).
+  3. Keep from X's document-level facts only what still helps locating in Y,
+     e.g. that in-text equation references use `[N]`.
+  4. Remove X from traps that cite it as an example, unless another file
+     still illustrates the trap.
+  5. Changelog line: "X replaced by its transcription Y".
 - **Changed file** (same name, different hash, reported `CHANGED`): treat as
   new. **Do not assume earlier mappings still hold**; the container itself may
   have changed. Regenerate its entry without `--add-rendition`, which retires
@@ -182,6 +205,14 @@ Document-level (hold for every rendition; confirmed on each):
 - Geometry: image size or dpi; column gutter.
 
 (Repeat the rendition block for each recorded rendition.)
+
+### <short name> — transcription
+- `<NAME>.md`, pdf-to-markdown transcription of <document>; replaces
+  `<original file>` (removed <date>) / sits beside it.
+- Pages 1–N; printed numbers: <from markers | equal PDF pages, verified at
+  conversion>. Equation tags `\tag{…}`; in-text references `<style>`.
+- Figures: `<NAME>_figures.pdf`, P pages.
+- Defects: <none | from the profile>. Original kept at: <location, if any>.
 
 ## Project-specific traps
 1. <trap>: <why it matters here>; example verified at <file> p. N.

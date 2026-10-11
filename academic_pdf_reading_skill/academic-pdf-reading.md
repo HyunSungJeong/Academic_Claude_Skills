@@ -1,8 +1,8 @@
-# academic-pdf-reading v1.1.0 (2026-09-27) — standalone bundle
+# academic-pdf-reading v1.3.0 (2026-10-11) — standalone bundle
 
 > Generated from the skill folder by `scripts/build_bundle.py`. **Do not edit by hand**: edit the skill and rebuild. Version string must match the installed skill's `metadata.version`.
 
-**When to use:** Error-averse protocol for reading academic papers and textbooks stored as PDFs, as ZIP archives of page images plus text layers disguised as .pdf, or as text-only extractions, whenever equations, indices, signs, overbars, primes or notation must be read exactly. Use this skill whenever the user asks about an equation, derivation, figure, page, section or notation in an uploaded or project-knowledge paper or textbook, asks to quote, check or transcribe a formula from a PDF, or when a .pdf file turns out not to be a real PDF. Also use it at the first use in each session when a project-specific protocol (pdf_protocol_*.md) exists, and to create, check or update such a protocol. Covers container triage by magic bytes, text-layer failure modes (character substitution, geometry destruction, OCR), page-offset determination, image cropping for math, and quoting rules. Ships triage.py for deterministic measurements.
+**When to use:** Error-averse protocol for reading academic papers and textbooks stored as PDFs, as ZIP archives of page images plus text layers disguised as .pdf, as text-only extractions, or as pdf-to-markdown transcriptions (NAME.md plus NAME_figures.pdf), whenever equations, indices, signs, overbars, primes or notation must be read exactly. Use this skill whenever the user asks about an equation, derivation, figure, page, section or notation in an uploaded or project-knowledge paper or textbook, asks to quote, check or transcribe a formula from a PDF or a transcription, or when a .pdf file turns out not to be a real PDF. Also use it at the first use in each session when a project-specific protocol (pdf_protocol_*.md) exists, and to create, check or update such a protocol. Covers container triage by magic bytes, text-layer failure modes (character substitution, geometry destruction, OCR), page offsets, image cropping for math, and quoting rules. Ships triage.py for deterministic measurements.
 
 ## How to use this bundle without the installed skill
 
@@ -32,6 +32,11 @@ prime turns into the digit `0`, and the result still looks like plausible
 mathematics. Everything in this skill exists to stop a corrupted text layer
 from reaching an answer as if it were the paper's content.
 
+A document can also arrive already transcribed: the pdf-to-markdown skill turns
+a PDF into `NAME.md` (text, with LaTeX math transcribed from the page images)
+plus `NAME_figures.pdf`. Such a transcription is read as source (§3.6); none of
+the text-layer machinery below applies to it.
+
 Throughout, `SKILL_DIR` means this skill's directory (for an installed skill,
 typically `/mnt/skills/user/academic-pdf-reading`). The script is
 `SKILL_DIR/scripts/triage.py`; run `python3 SKILL_DIR/scripts/triage.py -h`
@@ -53,17 +58,26 @@ These hold for every file, every project, every question.
    It comes off the page image. If a file has no image channel, anything
    mathematical taken from it is labelled *"text-layer reading, unverified"*
    and, where possible, cross-checked against another source or re-derived.
+   A pdf-to-markdown transcription is not a text layer: its math was
+   transcribed from the page images and machine-checked when it was made
+   (§3.6).
 4. **Source outranks rendering.** If the LaTeX source of a document is
-   available, read the source.
+   available, read the source. A pdf-to-markdown transcription is read the
+   same way: quoted as-is, math included, without re-checking it against page
+   images in the chat (§3.6).
 5. **No glyph mapping transfers between documents** — not between two papers of
    the same group, journal and year, not between parts of one book. Mappings
    are properties of one file's embedded fonts.
 6. **Every reading fact carries its provenance**: "verified at p. N (context)"
    when checked on the image, "provisional (context only)" otherwise.
 7. **Cite the printed page and the equation tag**, and know how the printed
-   page relates to the file's page index (§5).
+   page relates to the file's page index (§5). In a transcription the page
+   markers give both (§3.6).
 8. **If the image is still ambiguous after cropping, say so.** Cross-check the
    same object elsewhere (§6) or report the ambiguity; do not guess.
+9. **Reading facts belong to a rendition, not to a file name.** The same
+   document can reach you as different containers (§1.1); container-specific
+   facts measured on one never transfer to another.
 
 ---
 
@@ -82,19 +96,35 @@ or a pointer to one in the user's instructions):
    ```
    Re-run it whenever the user says files were added or replaced, or a file is
    attached in the chat. Do not re-run it per question.
-3. If it reports **stale**: tell the user exactly what was added, removed or
-   changed; read the affected files via the no-protocol path below; offer to
-   update the protocol following `references/project_protocol.md`. A stale
-   protocol never blocks answering.
+3. If it reports **stale** (exit 1): tell the user exactly what was added,
+   removed or changed; read the affected files via the no-protocol path below;
+   offer to update the protocol following `references/project_protocol.md`. A
+   stale protocol never blocks answering.
+   If it reports only **probable rendition swaps** (`SWAP?`, exit 3): tell the
+   user which files, and ask whether any of them was edited or replaced. Until
+   they answer, read those files via the no-protocol path — the protocol has
+   no facts for the mounted rendition. If they confirm nothing changed, offer
+   to record the new renditions (`references/project_protocol.md` §6). See
+   §1.1.
    Only *document* files (PDF, ZIP, text extraction, image) can make a protocol
-   stale. Source files (`.tex` `.md` `.bib` `.sty` `.cls`) are listed
-   separately as `source +/-/~` and do not: read them directly, with no
-   update round. Two exceptions need a mention to the user: a removed or
-   renamed source that the protocol names (e.g. in a source–rendering
-   pairing), and a source that newly pairs with a document already in the
-   protocol, since the source then outranks that rendering.
-4. If it reports **up to date**: use the protocol's per-file facts (container,
-   offsets, verified mappings, traps) in place of re-deriving them.
+   stale. Source-like files are listed separately and do not: source files
+   (`.tex` `.md` `.bib` `.sty` `.cls`, as `source +/-/~`), pdf-to-markdown
+   transcriptions (`transcr. +/~`) and their figures PDFs (`figures +/~`).
+   Read them directly, with no update round. Three cases need a mention to the
+   user:
+   - a removed or renamed source that the protocol names (e.g. in a
+     source–rendering pairing);
+   - a source or transcription that newly pairs with a document already in
+     the protocol (`pairing` line), since it then outranks that rendering;
+   - a recorded document replaced by a transcription of it (`CONVERTED`). This
+     *is* stale, because the protocol still holds reading facts for a
+     rendition that is gone, but it needs no triage: rewrite the entry as
+     `references/project_protocol.md` §6 says. Until then, read the
+     transcription (§3.6) and ignore the old entry's glyph mappings.
+4. If it reports **up to date** (exit 0): use the protocol's per-file facts
+   (container, offsets, verified mappings, traps) in place of re-deriving them,
+   taking the facts of the rendition that is mounted (`mounted` lines; the
+   file's magic bytes decide).
 
 **If no project protocol exists** (a one-off upload, a new project, a file not
 yet in the inventory): triage each file you need (§2) and proceed with the
@@ -103,6 +133,36 @@ same files will keep coming back, suggest generating one.
 
 **To create or update a project protocol**, read
 `SKILL_DIR/references/project_protocol.md` and follow it.
+
+### 1.1 Renditions
+
+A project file can be presented in more than one **rendition** — different
+containers holding the same document — and which one is mounted can differ
+between sessions, without the user changing anything. Observed on claude.ai
+project knowledge: an uploaded PDF mounted as itself in one session and as a
+paged ZIP of page images plus text layers (§3.1) in another, switching in both
+directions; after a round trip the file had its original byte size again
+(the earlier PDF hash had not been kept). The mechanism is not documented; treat it as possible for every project file.
+
+Consequences:
+
+- A changed hash is not by itself a changed document. The check recognises
+  every rendition the inventory records, and classifies an unknown hash under
+  a known name as a **probable swap** only if the container differs from every
+  recorded rendition, the page count matches, and the prose sketch (if one is
+  recorded) agrees. Anything else is **changed**.
+- The sketch (per-page simhash of letter 5-grams, `triage.py`) identifies the
+  *document*, not the *version*: it cannot see a revision that edits a few
+  equations or sentences. A probable swap is evidence, not proof. The user
+  decides, which is why exit 3 always ends in a question to the user.
+- A new hash in the *same* container as a recorded rendition is reported as
+  changed even if the sketch agrees (it may be a revision touching only math,
+  or a re-render); ask the user.
+- Container-dependent facts — access recipe, text-layer glyph and control-byte
+  mappings, line endings, pixel coordinates and column gutters, manifest
+  quirks — are recorded per rendition. Facts about the document itself —
+  printed-page offset, equation-tag ranges, section map — usually hold across
+  renditions but are confirmed once on each new rendition before reuse.
 
 ---
 
@@ -123,7 +183,9 @@ questions 2–3 are settled by looking at page images.
 | `%PDF-` | genuine PDF | poppler tools work; §3.2 |
 | `PK\x03\x04` | ZIP | usually a *paged archive*: `N.jpeg` + `N.txt` per page + `manifest.json`; §3.1. Any other layout: list the members and inspect by hand. |
 | UTF-8 text, no NUL, `.pdf` or other extension | text-only extraction | **no image channel**; §3.3 |
+| UTF-8 text whose first line is `<!-- Transcription of NAME.pdf. … -->` (any extension) | transcription | pdf-to-markdown output: read as source; §3.6 |
 | UTF-8 text, `.tex` `.md` `.bib` `.sty` `.cls` | source | read directly; §3.4. A `.txt` is **not** assumed to be source: it may be an extraction |
+| `%PDF-`, named `NAME_figures.pdf`, beside a transcription `NAME.md` | figures PDF | figure images of that transcription; §3.6. The profile reports it as `FIGURES PDF of …` |
 | JPEG / PNG | single page image | image channel only |
 | anything else | unknown | **stop and report**; do not guess |
 
@@ -133,7 +195,7 @@ questions 2–3 are settled by looking at page images.
 |---|---|---|
 | yes | yes | standard: locate in text, read on image |
 | yes | no | *image-only* (scanned PDF, no text layer): locate by viewing low-resolution pages, then crop. OCR (e.g. `tesseract`) may be used to **locate**, never to quote |
-| no | yes | *unverified*: text is the only source; label all math unverified (§3.3) |
+| no | yes | *unverified*: text is the only source; label all math unverified (§3.3). Not for source files or transcriptions (§3.4, §3.6) |
 | no | no | nothing readable; report |
 
 **Q3 — Failure modes of the text channel**: which of A, B, C (§4) are present.
@@ -203,7 +265,8 @@ inline formula and one prose paragraph against the image before relying on it.
 ### 3.4 Source files
 
 `.tex` and `.md` are the ground truth for their own content and may be quoted
-as-is, math included.
+as-is, math included. A `.md` that opens with the transcription legend is a
+pdf-to-markdown transcription; §3.6 says how to read it.
 
 ### 3.5 Viewing and cropping
 
@@ -219,6 +282,57 @@ On a two-column page, find the column gutter once and reuse it. For every
 sign, index, prime, bar, fraction, or permutation subscript, crop *that
 line*; resolve superscript vs subscript and numerator vs denominator
 explicitly.
+
+### 3.6 Markdown transcriptions (pdf-to-markdown)
+
+**Recognition.** The first line is the legend
+`<!-- Transcription of NAME.pdf. "page N" markers give the PDF page … -->`.
+`triage.py profile` reports the container as `transcription` and counts its
+page markers, `\tag`s and figure lines. The transcribed PDF can carry another
+name in project knowledge (uploads rename files); the check matches them by
+letters and digits only.
+
+**Trust.** The transcription is read as source: quote it as-is, math
+included, and label it by page (`transcription, p. N`), not as `verified` or
+`unverified`. Do not re-check its equations against page images in the chat;
+the point of converting is to spend those tokens once, at conversion time,
+where every formula was transcribed from the image and proofread. Its LaTeX
+keeps typeface distinctions (`\mathcal{G}` vs `G`, `\boldsymbol`), bars,
+primes and tags as printed, apparent typos included.
+
+**When to escalate.** Only in the following cases. Say what the
+transcription says and ask the user for the original page. Do not correct it
+silently or guess.
+- A derivation, or a companion paper that restates the same object,
+  contradicts it, and the conflict survives a re-check of the derivation.
+- It is internally inconsistent: a tag missing or duplicated, a formula that
+  does not parse, a sentence that breaks off.
+- The profile reports a structural defect: missing or out-of-order page
+  markers, a stray `<!-- continues -->`, a figures PDF that is not there.
+
+**Pages.** `<!-- page N -->` opens page N of the PDF.
+`<!-- page N (printed M) -->` adds the number printed on it. Where a
+paragraph runs across a break, the marker stands inline at the break, so the
+text after it is on page N. Without `(printed M)`, the printed number equals
+N or was not determined at conversion; a project protocol records which.
+Otherwise cite N and say it is the PDF page.
+`triage.py grep PATTERN FILE` reports hits as `pN` or `pN(printed M)`, and
+`triage.py text FILE N` prints page N.
+
+**Equations.** Displays carry `\tag{N}` with the printed equation number, so
+grep `\\tag\{12a\}`. In-text references keep the document's own style.
+
+**Figures.** A figure is a placeholder line
+`*[Fig. N: NAME_figures.pdf, page P]*` followed by its transcribed caption.
+Text inside the figure (axis labels, legends, diagram labels) is not in the
+Markdown. For any question about what a figure shows, open page P of the
+figures PDF. Each figure there is labelled `Fig. N, p. S` or
+`Fig. N, p. S (printed M)` (S its PDF page), and several figures share a page. Crop one with `triage.py crop` if
+labels are small. The figures PDF has nothing else to triage.
+
+**Beside the original.** If the transcribed PDF is also mounted, read the
+transcription for content. Open the PDF only for questions about the page
+itself (layout, an element the transcription omits).
 
 ---
 
@@ -318,6 +432,8 @@ Printed page numbers and file page indices differ more often than expected.
    different offset or none.
 4. Text-only files: use running headers (`running_headers` in the profile);
    they are noisy, so confirm a located page by its section title.
+5. Transcriptions: the page markers give the PDF page and, where it differs,
+   the printed page (§3.6); nothing to measure.
 
 ---
 
@@ -327,7 +443,8 @@ Printed page numbers and file page indices differ more often than expected.
 - Grep for a distinctive *prose* word or phrase; section headers are usually
   clean.
 - For an equation's definition, grep its tag in the form the file uses (ASCII
-  `(146a)`, substituted `ð40Þ`, bracketed `[1]`). Know the citation style too:
+  `(146a)`, substituted `ð40Þ`, bracketed `[1]`, or `\tag{1}` in a
+  transcription). Know the citation style too:
   some journals tag equations `[N]` and cite references `(N)`.
 - `triage.py grep PATTERN FILE... [--escape]` reports `file:pPAGE:LINE`, strips
   `\r`, and with `--escape` shows control bytes as `\xNN`.
@@ -342,7 +459,8 @@ restates it.
 - Prose may be quoted from the text layer after deterministic repairs
   (line-break hyphen bytes → `-` or joined; ligature damage with a unique
   completion), except under mode C.
-- Mathematics is quoted only from the image, or labelled unverified.
+- Mathematics is quoted from the image, from source, or from a
+  transcription (§3.6); anything else is labelled unverified.
 - Cite as "Author Year, p. N, Eq. (X)" with N the printed page.
 
 ---
@@ -378,7 +496,7 @@ restates it.
 
 # Generating and maintaining a project-specific PDF protocol
 
-Companion to `SKILL.md` (academic-pdf-reading v1.1.0). Read this when asked to
+Companion to `SKILL.md` (academic-pdf-reading v1.3.0). Read this when asked to
 **create**, **update**, or **review** a project protocol, or when the staleness
 check reports a mismatch and the user wants the protocol brought up to date.
 
@@ -405,11 +523,22 @@ are used.
 
 ## 2. What belongs in it, and what does not
 
-**Belongs:** the inventory (name, size, SHA-256, container, pages); per-file
-profile; verified and provisional mappings with provenance; page offsets and
+**Belongs:** the inventory (per file, one or more renditions, each with
+SHA-256, size, container, pages and prose sketch; see `SKILL.md` §1.1); per-file
+profile, split by rendition where it depends on the container; verified and provisional mappings with provenance; page offsets and
 their basis; structural maps (where appendices, references, index start);
 per-file grep conventions (equation-tag form, citation form); project-specific
 traps; a changelog.
+
+For a **pdf-to-markdown transcription** (`SKILL.md` §3.6) the entry is short,
+because there is nothing to triage:
+- the document it transcribes, and the PDF it replaced in this project, if any;
+- pages covered, and whether printed numbers differ from PDF pages (`printed`
+  in the markers, or "printed = PDF page, verified at conversion");
+- its figures PDF;
+- any structural defect the profile reports;
+- where the original lives, if the user keeps it outside the project.
+Its figures PDF needs no entry of its own beyond the inventory line.
 
 **Does not belong:**
 - *General mechanisms* already in `SKILL.md` — refer to them ("mode B applies")
@@ -433,6 +562,8 @@ Work through the files in order; keep notes as you go.
    `pdf_protocol_*.md` automatically).
 2. **Container and channels** for each file, from the profile. Note anything
    surprising (a `.pdf` that is text; a ZIP that is not a paged archive).
+   Transcriptions and their figures PDFs skip steps 3–6: record their entry
+   as §2 says, from the profile's `transcr.` line and notes.
 3. **Failure modes.** For each file with a text channel, compare against the
    image: one displayed equation, one inline formula, one prose paragraph, and
    one figure caption. Record which of modes A, B, C are present, and where
@@ -492,8 +623,9 @@ are read-only, and skills are global). So:
 
 Triggered by a stale check, or by the user.
 
-Source-file changes (`source +/-/~` in the check output) never trigger an
-update on their own; the inventory may lag behind them. Fold them in at the
+Source-like changes (`source`, `transcr.` and `figures` lines in the check
+output) never trigger an update on their own; the inventory may lag behind
+them. Fold them in at the
 next update that happens for another reason: add inventory entries for new
 sources, record any source–rendering pairing in the paired document's entry
 ("`X.tex` supersedes this file for content; keep the rendering for figures"),
@@ -503,10 +635,38 @@ and drop entries for removed sources and any pairing that names them.
   its inventory entry.
 - **Removed file:** delete its entry and every fact that depends on it; note the
   removal in the changelog (future readers should know it once existed).
-- **Changed file** (same name, different hash): treat as new. **Do not assume
-  earlier mappings still hold**; the container itself may have changed.
-- Regenerate the inventory block with `triage.py inventory`, bump the
-  protocol's date, add a changelog line, re-run the self-check, hand off (§5).
+- **Converted file** (`CONVERTED X -> Y.md`: the document X is gone and a
+  transcription Y of it is present): no triage.
+  1. Retire all of X's renditions and every container-dependent fact
+     (glyph mappings, control bytes, pixel boxes, line endings).
+  2. Replace X's entry by a transcription entry for Y (§2).
+  3. Keep from X's document-level facts only what still helps locating in Y,
+     e.g. that in-text equation references use `[N]`.
+  4. Remove X from traps that cite it as an example, unless another file
+     still illustrates the trap.
+  5. Changelog line: "X replaced by its transcription Y".
+- **Changed file** (same name, different hash, reported `CHANGED`): treat as
+  new. **Do not assume earlier mappings still hold**; the container itself may
+  have changed. Regenerate its entry without `--add-rendition`, which retires
+  its old renditions and every fact recorded for them.
+- **Probable rendition swap** (`SWAP?`): first ask the user whether the file
+  was edited or replaced. If it was, handle it as a changed file. If not:
+  1. triage the mounted rendition (§3, steps 2–6) and record its
+     container-dependent facts in a new rendition block of that file's entry
+     (template, §7), leaving the existing rendition's block untouched;
+  2. confirm the document-level facts (page offset, tag range, structure) on
+     at least three spread pages of the new rendition and note that they hold
+     for both;
+  3. append it to the inventory with
+     `triage.py inventory ... --merge OLD --add-rendition NAME...`, naming
+     only the files the user confirmed.
+  A rendition block whose facts were never measured is labelled
+  "facts not yet recorded" rather than omitted, so a later session does not
+  borrow another rendition's mappings.
+- Regenerate the inventory block with `triage.py inventory`, using
+  `--merge` with the current protocol so that recorded renditions are kept,
+  bump the protocol's date, add a changelog line, re-run the self-check, hand
+  off (§5).
 
 ## 7. Template
 
@@ -528,12 +688,27 @@ Run on first use each session (and when files change):
 
 ## Per-file facts
 ### <short name>
-- Container / access:
+Document-level (hold for every rendition; confirmed on each):
+- Printed-page offset (basis):
+- Grep conventions: equation-tag range and form; citations.
+- Structure:
+
+#### Rendition: <container> (sha256 <first 12 hex>)
+- Access:
 - Text layer: modes present; what is safe; line endings; column order.
-- Grep conventions: equation tags; citations.
 - Verified mappings:
 - Provisional / unmapped:
-- Structure:
+- Geometry: image size or dpi; column gutter.
+
+(Repeat the rendition block for each recorded rendition.)
+
+### <short name> — transcription
+- `<NAME>.md`, pdf-to-markdown transcription of <document>; replaces
+  `<original file>` (removed <date>) / sits beside it.
+- Pages 1–N; printed numbers: <from markers | equal PDF pages, verified at
+  conversion>. Equation tags `\tag{…}`; in-text references `<style>`.
+- Figures: `<NAME>_figures.pdf`, P pages.
+- Defects: <none | from the profile>. Original kept at: <location, if any>.
 
 ## Project-specific traps
 1. <trap>: <why it matters here>; example verified at <file> p. N.
@@ -563,28 +738,48 @@ Subcommands
   tools                           which helper tools exist in this environment
   profile FILE... [--json OUT]    container, channels, text-layer signals,
                                   page-offset candidates, notes
-  inventory FILE... [--root DIR] [--out OUT]
-                                  compact inventory (name, size, sha256,
-                                  container, pages) for a project protocol
+  inventory FILE... [--root DIR] [--out OUT] [--merge OLD]
+                    [--add-rendition NAME...]
+                                  compact inventory for a project protocol:
+                                  per file, one or more renditions (sha256,
+                                  size, container, pages, prose sketch).
+                                  --merge keeps OLD's renditions for files whose
+                                  hash is already known; a file named in
+                                  --add-rendition gets its new hash appended as
+                                  a further rendition instead of replacing the
+                                  old ones (only after the user has confirmed
+                                  the content is unchanged).
   check INVENTORY [--root DIR] [--json]
                                   staleness check. INVENTORY is a .json file
                                   or a .md containing a ```json block with the
-                                  key "pdf_protocol_inventory". Exit 1 if stale.
-                                  Source files (.tex .md ...) are reported but
-                                  never make the protocol stale.
+                                  key "pdf_protocol_inventory". A file matching
+                                  any recorded rendition is unchanged. Exit 1 if
+                                  stale; exit 3 if the only differences are
+                                  probable rendition swaps (confirm them).
+                                  Source files (.tex .md ...), pdf-to-markdown
+                                  transcriptions and their figures PDFs are
+                                  reported but never make the protocol stale;
+                                  a recorded document replaced by a
+                                  transcription of it is reported CONVERTED
+                                  (stale: its entry must be rewritten).
   text FILE [N] [--lines A:B] [--escape]
-                                  print the text layer of page N (paged files)
-                                  or a line range (text-only files)
+                                  print the text layer of page N (paged files;
+                                  for a transcription, the text between its
+                                  page markers N and N+1) or a line range
+                                  (text-only files)
   grep PATTERN FILE... [-i] [--escape]
                                   regex search of text layers, reported as
-                                  file:page:line; CRLF-safe
+                                  file:page:line (a transcription reports the
+                                  page from its markers, e.g. p3 or
+                                  p3(printed 1203)); CRLF-safe
   extract FILE --out DIR          paged ZIP -> its members; genuine PDF ->
                                   one N.txt per page via pdftotext
   crop SRC --page N [--box x0 y0 x1 y1] [--scale S] [--dpi D] --out PNG
                                   page image (paged ZIP, genuine PDF, or image
                                   file), optionally cropped and LANCZOS-upscaled
 
-Exit codes: 0 ok; 1 check found differences; 2 usage or I/O error.
+Exit codes: 0 ok; 1 check found differences; 2 usage or I/O error;
+3 check found only probable rendition swaps.
 Python 3.8+. Optional: poppler-utils (pdfinfo pdftotext pdftoppm pdffonts
 pdfimages), Pillow, pypdf.
 """
@@ -601,9 +796,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import unicodedata
 import zipfile
 
-TRIAGE_VERSION = "1.1.0"
+TRIAGE_VERSION = "1.3.0"
 
 # ---------------------------------------------------------------- utilities
 
@@ -664,6 +860,87 @@ def escape(s):
 # ---------------------------------------------------------------- container
 
 
+# A pdf-to-markdown transcription is recognised by content, not by extension:
+# its first non-blank line is the legend written by assemble.py,
+#   <!-- Transcription of NAME.pdf. "page N" markers give the PDF page ... -->
+# Page markers  <!-- page N -->  or  <!-- page N (printed M) -->  open every page
+# (inline where a paragraph runs across the break); figures are referenced by
+# lines  *[Fig. N: NAME_figures.pdf, page P]*  .
+TRANSCRIPTION_RX = re.compile(r"\A\s*<!--\s*Transcription of (.+?\.pdf)\.", re.I)
+PAGE_MARK_RX = re.compile(r"<!--\s*page\s+(\d+)(?:\s*\(printed\s+([^)]*?)\s*\))?\s*-->")
+FIG_LINE_RX = re.compile(r"^\*\[Fig\.\s*([^:\]]+?):\s*(.+?\.pdf),\s*page\s+(\d+)\]\*\s*$", re.M)
+CONTINUES_MARK = "<!-- continues -->"
+FIGURES_SUFFIX = "_figures.pdf"
+SOURCE_LIKE = ("source-text", "transcription")
+
+
+def norm_stem(name):
+    """File name reduced for matching across upload renamings: NFKC, lowercase,
+    extension dropped, letters and digits only ('[Lihm 2026] The ...pdf' and
+    'Lihm_2026_The_...pdf' agree)."""
+    stem = re.sub(r"\.(pdf|md)$", "", name, flags=re.I)
+    stem = unicodedata.normalize("NFKC", stem).lower()
+    return "".join(ch for ch in stem if ch.isalnum())
+
+
+def transcription_info(path):
+    """Structure of a pdf-to-markdown transcription (measurements only)."""
+    t = get_whole_text(path).replace("\r", "")
+    m = TRANSCRIPTION_RX.match(t)
+    marks = [(int(a), b or None) for a, b in PAGE_MARK_RX.findall(t)]
+    nums = [n for n, _ in marks]
+    figs = FIG_LINE_RX.findall(t)
+    cont_lines = [i for i, ln in enumerate(t.split("\n"), 1) if CONTINUES_MARK in ln]
+    tags = re.findall(r"\\tag\{([^}]*)\}", t)
+    dup_tags = sorted({x for x in tags if tags.count(x) > 1})
+    here = os.path.dirname(os.path.abspath(path))
+    fig_files = sorted({f for _, f, _ in figs})
+    return {
+        "source_pdf": m.group(1) if m else None,
+        "page_markers": len(marks),
+        "pages": (min(nums), max(nums)) if nums else None,
+        "pages_missing": sorted(set(range(min(nums), max(nums) + 1)) - set(nums)) if nums else [],
+        "pages_out_of_order": nums != sorted(nums),
+        "printed_given": sum(1 for _, p in marks if p),
+        "figure_lines": len(figs),
+        "figure_files": fig_files,
+        "figure_files_missing": [f for f in fig_files if not os.path.isfile(os.path.join(here, f))],
+        "tags": len(tags),
+        "duplicate_tags": dup_tags[:20],
+        "stray_continues_lines": cont_lines,
+    }
+
+
+def transcription_pages(text):
+    """[(N, printed, text)] for the segments between page markers. Text before
+    the first marker (the legend) is dropped."""
+    out, it = [], list(PAGE_MARK_RX.finditer(text))
+    for i, m in enumerate(it):
+        end = it[i + 1].start() if i + 1 < len(it) else len(text)
+        out.append((int(m.group(1)), m.group(2) or None, text[m.end():end]))
+    return out
+
+
+def figures_owner(path):
+    """For NAME_figures.pdf lying next to a transcription NAME.md: that .md's
+    name; else None. Pairing is by file name, as pdf-to-markdown writes it."""
+    base = os.path.basename(path)
+    if not base.lower().endswith(FIGURES_SUFFIX):
+        return None
+    md = os.path.join(os.path.dirname(os.path.abspath(path)), base[:-len(FIGURES_SUFFIX)] + ".md")
+    if os.path.isfile(md) and detect_container(md)[0] == "transcription":
+        return os.path.basename(md)
+    return None
+
+
+def file_kind(path):
+    """Container, refined by role: 'figures' for a transcription's figures PDF."""
+    cont = detect_container(path)[0]
+    if cont == "pdf" and figures_owner(path):
+        return "figures"
+    return cont
+
+
 def detect_container(path):
     """(container, detail), decided by magic bytes -- never by extension."""
     with open(path, "rb") as f:
@@ -683,6 +960,9 @@ def detect_container(path):
         except UnicodeDecodeError as e:
             ok = e.start > len(head) - 4   # multibyte char cut at buffer end
         if ok:
+            m = TRANSCRIPTION_RX.match(head.decode("utf-8", "ignore"))
+            if m:
+                return "transcription", m.group(1)
             ext = os.path.splitext(path)[1].lower()
             if ext in (".tex", ".md", ".bib", ".sty", ".cls"):  # .txt is NOT source: may be an extraction
                 return "source-text", ext
@@ -821,11 +1101,33 @@ def notes_for(rec):
         n.append("ZIP without the N.jpeg/N.txt layout: list and inspect members by hand.")
     if cont == "source-text":
         n.append("SOURCE FILE: read directly; it outranks any rendering of it.")
+    if cont == "transcription":
+        ti = rec.get("transcription", {})
+        n.append("TRANSCRIPTION of %s (pdf-to-markdown): read as source (SKILL.md 3.6); "
+                 "quote as-is, math included; cite pages from its markers."
+                 % ti.get("source_pdf"))
+        if not ti.get("page_markers"):
+            n.append("No page markers: printed pages cannot be cited; cite section and equation tag.")
+        if ti.get("pages_missing") or ti.get("pages_out_of_order"):
+            n.append("Page markers incomplete or out of order (missing %s): check the assembly."
+                     % ti.get("pages_missing", [])[:10])
+        if ti.get("stray_continues_lines"):
+            n.append("Stray '<!-- continues -->' on line(s) %s: a page join failed; the prose "
+                     "there may be cut (a structural defect, not a math one)."
+                     % ti["stray_continues_lines"][:10])
+        if ti.get("duplicate_tags"):
+            n.append("Equation tags occurring more than once: %s." % ti["duplicate_tags"])
+        if ti.get("figure_files_missing"):
+            n.append("Figures PDF %s not next to this file: figures cannot be viewed."
+                     % ti["figure_files_missing"])
+    if rec.get("figures_of"):
+        n.append("FIGURES PDF of %s: figure images only (its text is just the labels); "
+                 "nothing to triage. Open the page its placeholder names." % rec["figures_of"])
     if cont == "text-extraction":
         n.append("TEXT-ONLY EXTRACTION (despite its extension): no image channel exists.")
-    if not ch["image"] and cont not in ("source-text",):
+    if not ch["image"] and cont not in SOURCE_LIKE:
         n.append("NO IMAGE CHANNEL: mathematics is text-layer only -> label unverified.")
-    if cont == "pdf":
+    if cont == "pdf" and not rec.get("figures_of"):
         f = rec.get("fonts", {})
         if f.get("no_tounicode"):
             n.append("Fonts without ToUnicode maps %s: text set in these fonts may extract wrongly." % f["no_tounicode"][:5])
@@ -1036,6 +1338,11 @@ def profile_file(path):
             pg = collections.Counter(int(l.split()[0]) for l in out.splitlines()[2:]
                                      if l.split() and l.split()[0].isdigit())
             rec["raster_images"] = {"pages_with_images": len(pg), "total": sum(pg.values())}
+    elif cont == "transcription":
+        rec["channels"]["text"] = True
+        rec["transcription"] = transcription_info(path)
+        pr = rec["transcription"]["pages"]
+        rec["pages"] = (pr[1] - pr[0] + 1) if pr else None
     elif cont in ("text-extraction", "source-text"):
         rec["channels"]["text"] = True
         txt = get_whole_text(path)
@@ -1046,6 +1353,9 @@ def profile_file(path):
         rec["channels"]["image"] = True
         rec["pages"] = 1
 
+    if cont == "pdf" and figures_owner(path):
+        rec["figures_of"] = figures_owner(path)
+        pages = None                      # labels only: no folio or text signals
     if pages is not None:
         rec["folio_candidates"] = folio_candidates(pages)
         rec["text_signals"] = text_signals("\n".join(pages))
@@ -1063,6 +1373,13 @@ def print_profile(r):
         print("  images    : %s  (manifest has_visual_content=true on %s pages)" % (r["image_dims"], r.get("manifest_has_visual_content_true")))
     if "pdfinfo" in r:
         print("  pdfinfo   : %s" % r["pdfinfo"])
+    if "transcription" in r:
+        t = r["transcription"]
+        print("  transcr.  : of %s ; pages %s (%d markers, %d with printed numbers) ; "
+              "%d \\tag ; %d figure lines -> %s"
+              % (t["source_pdf"], "%d-%d" % t["pages"] if t["pages"] else "none",
+                 t["page_markers"], t["printed_given"], t["tags"], t["figure_lines"],
+                 t["figure_files"] or "-"))
     if "fonts" in r:
         f = r["fonts"]
         print("  fonts     : %d  Type3=%d  no-ToUnicode=%d  GlyphLess=%s  e.g. %s" % (f["count"], f["type3"], len(f["no_tounicode"]), f["glyphless_ocr_font"], f["sample"][:4]))
@@ -1080,25 +1397,164 @@ def print_profile(r):
     for n in r["notes"]:
         print("  NOTE      : " + n)
 
+# ---------------------------------------------------------------- prose sketch
+#
+# A rendition swap replaces a file by another rendering of the same document
+# (e.g. a genuine PDF by a paged ZIP of page images plus text layers). Hashes
+# then differ although the content does not. The sketch tests "same document"
+# across text extractors: per page, a 64-bit simhash of the set of letter
+# 5-grams of the lowercased, NFKC-normalised letters-only text stream.
+# Letters-only shingles survive lost spaces, line-break hyphens, ligatures and
+# column interleaving; math damage contributes noise, not signal.
+#
+# Calibration (2026-10-02, 9 papers/notes, 258 pages): median per-page Hamming
+# distance between pdftotext and pypdf extractions of the same file <= 7.5;
+# pdftotext vs Tesseract OCR of the page image 12-15; different documents >= 26.
+# The sketch identifies the DOCUMENT, not the VERSION: a revision that edits a
+# few equations or sentences is invisible to it. It is evidence for a swap,
+# never proof; an unknown hash is always confirmed with the user.
+
+SKETCH_ALGO = "simhash64-letters5"
+SKETCH_K = 5
+SKETCH_MIN_SHINGLES = 200      # pages with less prose (figures, blanks) -> null
+SWAP_AGREE_MAX = 16            # page-median Hamming <= this: same document
+SWAP_DIFFER_MIN = 22           # page-median Hamming >= this: different document
+SWAP_MIN_PAGES = 3             # fewer comparable pages: inconclusive
+DOC_AGREE_MAX = 10             # whole-document fallback (non-paged files)
+
+
+def _shingles(text):
+    s = re.sub(r"[^a-z]", "", unicodedata.normalize("NFKC", text).lower())
+    return {s[i:i + SKETCH_K] for i in range(len(s) - SKETCH_K + 1)}
+
+
+def _simhash(shingles):
+    if len(shingles) < SKETCH_MIN_SHINGLES:
+        return None
+    v = [0] * 64
+    for w in shingles:
+        h = int.from_bytes(hashlib.blake2b(w.encode(), digest_size=8).digest(), "big")
+        for b in range(64):
+            v[b] += 1 if (h >> b) & 1 else -1
+    return "%016x" % sum(1 << b for b in range(64) if v[b] > 0)
+
+
+def prose_sketch(path):
+    """Sketch of a document file, or None if it has no text channel."""
+    cont, _ = detect_container(path)
+    pages = get_pages(path)
+    if pages is not None:
+        whole = "\n".join(pages)
+        per = [_simhash(_shingles(t)) for t in pages]
+    elif cont in ("text-extraction", "source-text", "transcription"):
+        whole, per = get_whole_text(path), None
+    else:
+        return None
+    return {"algo": SKETCH_ALGO, "doc": _simhash(_shingles(whole)), "pages": per}
+
+
+def _ham(a, b):
+    return bin(int(a, 16) ^ int(b, 16)).count("1")
+
+
+def compare_sketches(new, old):
+    """('agree'|'differ'|'inconclusive', detail). Neutral evidence only."""
+    if not new or not old or old.get("algo") != new.get("algo"):
+        return "inconclusive", "no comparable reference sketch"
+    if new["pages"] is not None and old.get("pages") is not None:
+        if len(new["pages"]) != len(old["pages"]):
+            return "differ", "page counts differ"
+        hs = [_ham(a, b) for a, b in zip(new["pages"], old["pages"]) if a and b]
+        if len(hs) < SWAP_MIN_PAGES:
+            return "inconclusive", "only %d comparable pages" % len(hs)
+        med = sorted(hs)[len(hs) // 2]
+        detail = "page-median Hamming %d over %d pages" % (med, len(hs))
+        if med <= SWAP_AGREE_MAX:
+            return "agree", detail
+        if med >= SWAP_DIFFER_MIN:
+            return "differ", detail
+        return "inconclusive", detail
+    if new.get("doc") and old.get("doc"):
+        d = _ham(new["doc"], old["doc"])
+        return ("agree" if d <= DOC_AGREE_MAX else "inconclusive"), "whole-document Hamming %d" % d
+    return "inconclusive", "no comparable reference sketch"
+
 # ---------------------------------------------------------------- inventory / check
 
 
-def make_inventory(paths, root):
-    files = []
+def rendition_of(path, with_sketch=True):
+    cont, _ = detect_container(path)
+    pages = None
+    if cont == "zip":
+        with zipfile.ZipFile(path) as zf:
+            lay = zip_layout(zf)
+        pages = lay["page_images"] if lay["paged_archive"] else None
+    elif cont == "pdf":
+        pages = pdf_npages(path) or None
+    r = {"sha256": sha256_of(path), "size": os.path.getsize(path),
+         "container": cont, "pages": pages,
+         "first_seen": datetime.date.today().isoformat()}
+    if cont == "transcription":
+        r["source_pdf"] = detect_container(path)[1]
+        pr = transcription_info(path)["pages"]
+        r["pages"] = (pr[1] - pr[0] + 1) if pr else None
+    owner = figures_owner(path) if cont == "pdf" else None
+    if owner:
+        r["role"], r["pairs_with"] = "figures", owner
+    if with_sketch and cont not in SOURCE_LIKE and not owner:
+        sk = prose_sketch(path)
+        if sk:
+            r["sketch"] = sk
+    return r
+
+
+def make_inventory(paths, root, old=None, add_rendition=()):
+    """Inventory of PATHS. With OLD (a loaded inventory), keep known renditions.
+
+    Per file: hash already recorded -> OLD entry kept (a missing sketch is
+    filled in for the mounted rendition); new hash and name in ADD_RENDITION ->
+    appended as a further rendition; new hash otherwise -> the entry is
+    replaced (old renditions retired: the content is treated as new).
+    """
+    oldrec = {f["name"]: f for f in (old or {}).get("files", [])}
+    files, log = [], []
     for p in paths:
-        cont, _ = detect_container(p)
-        pages = None
-        if cont == "zip":
-            with zipfile.ZipFile(p) as zf:
-                lay = zip_layout(zf)
-            pages = lay["page_images"] if lay["paged_archive"] else None
-        elif cont == "pdf":
-            pages = pdf_npages(p) or None
-        files.append({"name": os.path.basename(p), "size": os.path.getsize(p),
-                      "sha256": sha256_of(p), "container": cont, "pages": pages})
-    return {"pdf_protocol_inventory": {"triage_version": TRIAGE_VERSION,
+        n = os.path.basename(p)
+        new = rendition_of(p)
+        prev = oldrec.get(n)
+        if prev is None:
+            files.append({"name": n, "renditions": [new]})
+            log.append("new       : " + n)
+            continue
+        rends = [dict(r) for r in prev["renditions"]]
+        hit = next((r for r in rends if r["sha256"] == new["sha256"]), None)
+        if hit is not None:
+            if "sketch" not in hit and "sketch" in new:
+                hit["sketch"] = new["sketch"]
+            files.append({"name": n, "renditions": rends})
+            log.append("kept      : %s (%s rendition known)" % (n, hit["container"]))
+        elif n in add_rendition:
+            files.append({"name": n, "renditions": rends + [new]})
+            log.append("rendition+: %s (%s added beside %s)"
+                       % (n, new["container"], ", ".join(r["container"] for r in rends)))
+        else:
+            files.append({"name": n, "renditions": [new]})
+            log.append("replaced  : %s (old renditions retired)" % n)
+    for n in sorted(set(oldrec) - {os.path.basename(p) for p in paths}):
+        log.append("dropped   : " + n)
+    for ln in log:
+        print(ln, file=sys.stderr)
+    return {"pdf_protocol_inventory": {"triage_version": TRIAGE_VERSION, "format": 2,
                                        "generated": datetime.date.today().isoformat(),
                                        "root": root, "files": files}}
+
+
+def _normalise_entry(f):
+    """Format-1 entries (one hash per file) become a single rendition."""
+    if "renditions" in f:
+        return f
+    r = {k: f.get(k) for k in ("sha256", "size", "container", "pages")}
+    return {"name": f["name"], "renditions": [r]}
 
 
 def load_inventory(path):
@@ -1114,69 +1570,191 @@ def load_inventory(path):
                 break
         if obj is None:
             raise ValueError("no ```json block containing 'pdf_protocol_inventory'")
-    return obj.get("pdf_protocol_inventory", obj)
+    inv = obj.get("pdf_protocol_inventory", obj)
+    inv["files"] = [_normalise_entry(f) for f in inv["files"]]
+    return inv
+
+
+def classify_unknown(path, rends):
+    """An unrecorded hash under a known name: 'swap' or 'changed', with reason."""
+    cont, _ = detect_container(path)
+    cur = rendition_of(path)
+    known = {r["container"] for r in rends}
+    if cont in known:
+        sk = [compare_sketches(cur.get("sketch"), r.get("sketch"))
+              for r in rends if r["container"] == cont]
+        extra = "; sketch: %s (%s)" % sk[0] if sk and sk[0][0] == "agree" else ""
+        return "changed", "same container (%s), new hash%s" % (cont, extra)
+    if cont in SOURCE_LIKE or known & set(SOURCE_LIKE):
+        return "changed", "container %s -> %s" % ("/".join(sorted(known)), cont)
+    paged = [r for r in rends if r.get("pages")]
+    if cur["pages"] and paged:
+        if all(r["pages"] != cur["pages"] for r in paged):
+            return "changed", "container %s -> %s, pages %s -> %d" % (
+                "/".join(sorted(known)), cont,
+                "/".join(str(r["pages"]) for r in paged), cur["pages"])
+        refs = [r for r in paged if r["pages"] == cur["pages"]]
+    elif not cur["pages"] and not paged:
+        refs = list(rends)
+    else:
+        return "changed", "container %s -> %s, paged vs non-paged" % (
+            "/".join(sorted(known)), cont)
+    base = "container %s -> %s, %s" % ("/".join(sorted(known)), cont,
+                                       "%d pages match" % cur["pages"] if cur["pages"] else "both non-paged")
+    sks = [r for r in refs if r.get("sketch")]
+    if not sks:
+        return "swap", base + "; no reference sketch (structure only)"
+    verdicts = [compare_sketches(cur.get("sketch"), r["sketch"]) for r in sks]
+    if any(v[0] == "agree" for v in verdicts):
+        return "swap", base + "; sketch: agree (%s)" % next(v[1] for v in verdicts if v[0] == "agree")
+    return "changed", base + "; sketch: %s (%s)" % verdicts[0]
 
 
 def check(inv_path, root=None, as_json=False):
     """Compare the inventory with the files on disk.
 
+    A file is unchanged if its hash matches ANY recorded rendition. An
+    unrecorded hash is a probable rendition swap when the container differs
+    from every recorded rendition, the page count matches, and the prose
+    sketch (if one is recorded) agrees; otherwise it is changed. Swaps alone
+    do not make the protocol stale (exit 3), but they always need the user's
+    confirmation, and the protocol holds no reading facts for the new
+    rendition until it is updated.
+
     Only document files (PDF, ZIP, text extraction, image, unknown) can make a
-    protocol stale. Source files (.tex .md .bib .sty .cls) need no reading
-    facts -- they are read directly -- so adding, editing or removing one is
-    reported separately and does not count as stale. A file that changes
-    container into or out of 'source-text' does count.
+    protocol stale. Source-like files need no reading facts -- they are read
+    directly -- so adding, editing or removing one is reported separately and
+    does not count as stale. Source-like means: source text (.tex .md .bib
+    .sty .cls), a pdf-to-markdown transcription (recognised by its legend,
+    whatever its extension), and the figures PDF lying next to a
+    transcription (NAME_figures.pdf beside NAME.md). A file that changes
+    between a source-like kind and a document kind does count.
+
+    A recorded document that is gone while a transcription declaring it as
+    its source is present (names compared by norm_stem) is reported CONVERTED.
+    It is stale like any removal: the protocol entry still carries reading
+    facts for a rendition that no longer exists. A new transcription whose
+    source is still recorded and mounted is flagged as pairing with it.
     """
     inv = load_inventory(inv_path)
     root = root or inv.get("root") or "."
-    rec = {f["name"]: f for f in inv["files"]}
+    rec = {f["name"]: f["renditions"] for f in inv["files"]}
+    srcish = lambda r: r.get("container") in SOURCE_LIKE or r.get("role") == "figures"  # noqa: E731
+    is_src = lambda rs: all(srcish(r) for r in rs)  # noqa: E731
     disk = {n for n in os.listdir(root) if os.path.isfile(os.path.join(root, n))}
     ignored = {n for n in disk if re.fullmatch(r"pdf_protocol_.*\.md", n)}
-    src = "source-text"
+    kind = {n: file_kind(os.path.join(root, n)) for n in disk - ignored}
+    src_kinds = ("source-text", "transcription", "figures")
+    label = {"source-text": "source", "transcription": "transcr.", "figures": "figures"}
+    # transcriptions on disk, by the normalised name of the PDF they transcribe
+    tr_of = {}
+    for n, k in kind.items():
+        if k == "transcription":
+            tr_of.setdefault(norm_stem(detect_container(os.path.join(root, n))[1]), n)
     added, added_src, removed, removed_src = [], [], [], []
-    changed, changed_src, same = [], [], []
+    changed, changed_src, swaps, same, mounted = [], [], [], [], []
+    converted, pairs = [], []
     for n in sorted(disk - set(rec) - ignored):
-        (added_src if detect_container(os.path.join(root, n))[0] == src else added).append(n)
+        if kind[n] in src_kinds:
+            added_src.append({"name": n, "kind": kind[n]})
+            if kind[n] == "transcription":
+                tgt = [m for m in rec if m in disk and not is_src(rec[m])
+                       and norm_stem(m) == norm_stem(detect_container(os.path.join(root, n))[1])]
+                if tgt:
+                    pairs.append({"transcription": n, "document": tgt[0]})
+        else:
+            added.append(n)
     for n in sorted(set(rec) - disk):
-        (removed_src if rec[n].get("container") == src else removed).append(n)
+        if is_src(rec[n]):
+            removed_src.append(n)
+        elif norm_stem(n) in tr_of:
+            converted.append({"name": n, "transcription": tr_of[norm_stem(n)]})
+        else:
+            removed.append(n)
     for n in sorted(set(rec) & disk):
         p = os.path.join(root, n)
-        if os.path.getsize(p) != rec[n]["size"] or sha256_of(p) != rec[n]["sha256"]:
-            new = detect_container(p)[0]
-            item = {"name": n, "old_container": rec[n].get("container"), "new_container": new}
-            (changed_src if item["old_container"] == src and new == src else changed).append(item)
-        else:
+        size, digest, rs = os.path.getsize(p), sha256_of(p), rec[n]
+        hit = next((r for r in rs if r.get("size") == size and r.get("sha256") == digest), None)
+        if hit is not None:
             same.append(n)
-    stale = bool(added or removed or changed)
+            if len(rs) > 1:
+                mounted.append((n, hit["container"], len(rs)))
+            continue
+        new = kind[n]
+        if is_src(rs) and new in src_kinds:
+            changed_src.append({"name": n, "kind": new})
+            continue
+        verdict, why = classify_unknown(p, rs)
+        item = {"name": n, "known": sorted({r["container"] for r in rs}), "new_container": new,
+                "reason": why}
+        (swaps if verdict == "swap" else changed).append(item)
+    stale = bool(added or removed or changed or converted)
     res = {"root": root, "inventory_generated": inv.get("generated"), "unchanged": same,
-           "added": added, "removed": removed, "changed": changed,
-           "sources_added": added_src, "sources_removed": removed_src,
-           "sources_changed": [c["name"] for c in changed_src], "stale": stale}
+           "mounted_renditions": [{"name": n, "container": c, "known": k} for n, c, k in mounted],
+           "added": added, "removed": removed, "converted": converted, "changed": changed,
+           "probable_swaps": swaps,
+           "sources_added": [a["name"] for a in added_src],
+           "sources_removed": removed_src,
+           "sources_changed": [c["name"] for c in changed_src],
+           "source_kinds": {a["name"]: a["kind"] for a in added_src + changed_src},
+           "transcription_pairs": pairs, "stale": stale}
     if as_json:
         print(json.dumps(res, indent=1, ensure_ascii=False))
     else:
         print("staleness check against inventory of %s (root %s)" % (inv.get("generated"), root))
         print("  unchanged : %d file(s)" % len(same))
+        by = collections.Counter(c for _, c, _ in mounted)
+        for c, k in sorted(by.items()):
+            print("  mounted   : %s rendition, for %d file(s) with several recorded "
+                  "(use that rendition's facts)" % (c, k))
         for n in added:
             print("  ADDED     : " + n)
         for n in removed:
             print("  REMOVED   : " + n)
+        for c in converted:
+            print("  CONVERTED : %s -> %s (original gone; replace its entry by a transcription "
+                  "entry, references/project_protocol.md 6)" % (c["name"], c["transcription"]))
         for c in changed:
-            print("  CHANGED   : %s (container %s -> %s)" % (c["name"], c["old_container"], c["new_container"]))
-        for n in added_src:
-            print("  source +  : %s (read directly; not stale)" % n)
+            print("  CHANGED   : %s (%s)" % (c["name"], c["reason"]))
+        for c in swaps:
+            print("  SWAP?     : %s (%s)" % (c["name"], c["reason"]))
+        how = {"figures": "view pages on demand; not stale"}
+        for a in added_src:
+            print("  %-8s+ : %s (%s)" % (label[a["kind"]], a["name"],
+                                        how.get(a["kind"], "read directly; not stale")))
+        for q in pairs:
+            print("  pairing   : %s transcribes %s, which is still mounted (read the "
+                  "transcription for content; mention it to the user)"
+                  % (q["transcription"], q["document"]))
         for n in removed_src:
             print("  source -  : %s (not stale; update any pairing that names it)" % n)
         for c in changed_src:
-            print("  source ~  : %s (edited; read directly; not stale)" % c["name"])
-        print("  RESULT    : " + ("STALE -- re-triage the document files listed above" if stale
-                                   else "up to date" + (" (source-file changes listed above)"
-                                                        if added_src or removed_src or changed_src else "")))
-    return 1 if stale else 0
+            print("  %-8s~ : %s (edited; read directly; not stale)" % (label[c["kind"]], c["name"]))
+        if stale:
+            result = "STALE -- re-triage the document files listed above"
+            if converted and not (added or removed or changed):
+                result = "STALE -- only conversions: rewrite those entries (no triage needed)"
+        elif swaps:
+            result = ("PROBABLE RENDITION SWAP -- content likely unchanged, but the protocol "
+                      "has no reading facts for these renditions; read them via the "
+                      "no-protocol path and confirm with the user before recording them")
+        else:
+            result = "up to date" + (" (source-file changes listed above)"
+                                     if added_src or removed_src or changed_src else "")
+        print("  RESULT    : " + result)
+    return 1 if stale else (3 if swaps else 0)
 
 # ---------------------------------------------------------------- text / grep
 
 
 def cmd_text(path, page, lines, esc):
+    if detect_container(path)[0] == "transcription" and page:
+        segs = [t for n, _, t in transcription_pages(get_whole_text(path).replace("\r", ""))
+                if n == page]
+        if not segs:
+            sys.exit("no page marker for page %d in this transcription" % page)
+        print("".join(segs).strip("\n"))
+        return
     pages = get_pages(path)
     if pages is not None:
         if not page:
@@ -1196,6 +1774,9 @@ def cmd_grep(pattern, files, icase, esc):
     rx = re.compile(pattern, re.I if icase else 0)
     hits = 0
     for f in files:
+        if detect_container(f)[0] == "transcription":
+            hits += _grep_transcription(rx, f, esc)
+            continue
         pages = get_pages(f)
         units = list(enumerate(pages, 1)) if pages is not None else [(None, get_whole_text(f))]
         for pg, t in units:
@@ -1206,6 +1787,27 @@ def cmd_grep(pattern, files, icase, esc):
                     loc = ("p%d:%d" % (pg, ln_no)) if pg else ("L%d" % ln_no)
                     print("%s:%s: %s" % (os.path.basename(f)[:40], loc, escape(ln) if esc else ln))
     print("-- %d hit(s)" % hits, file=sys.stderr)
+
+
+
+def _grep_transcription(rx, f, esc):
+    """Hits in a transcription, located by its page markers: the page is the
+    one in force at the start of the match (a marker can stand mid-line)."""
+    hits, cur = 0, None
+    for ln_no, ln in enumerate(get_whole_text(f).replace("\r", "").split("\n"), 1):
+        marks = [(m.start(), int(m.group(1)), m.group(2)) for m in PAGE_MARK_RX.finditer(ln)]
+        for m in rx.finditer(ln):
+            pg = cur
+            for pos, n, pr in marks:
+                if pos <= m.start():
+                    pg = (n, pr)
+            hits += 1
+            loc = ("p%d%s" % (pg[0], "(printed %s)" % pg[1] if pg[1] else "")) if pg else "p?"
+            print("%s:%s:L%d: %s" % (os.path.basename(f)[:40], loc, ln_no, escape(ln) if esc else ln))
+            break                                   # one report per line
+        if marks:
+            cur = (marks[-1][1], marks[-1][2])
+    return hits
 
 # ---------------------------------------------------------------- extract / crop
 
@@ -1284,7 +1886,8 @@ def main(argv=None):
     sub.add_parser("tools")
     p = sub.add_parser("profile"); p.add_argument("files", nargs="+"); p.add_argument("--json")
     p = sub.add_parser("inventory"); p.add_argument("files", nargs="+")
-    p.add_argument("--root"); p.add_argument("--out")
+    p.add_argument("--root"); p.add_argument("--out"); p.add_argument("--merge")
+    p.add_argument("--add-rendition", nargs="+", default=[], metavar="NAME")
     p = sub.add_parser("check"); p.add_argument("inventory"); p.add_argument("--root")
     p.add_argument("--json", action="store_true")
     p = sub.add_parser("text"); p.add_argument("file"); p.add_argument("page", nargs="?", type=int)
@@ -1318,7 +1921,13 @@ def main(argv=None):
         files = [f for f in a.files if os.path.isfile(f)]
         if not files:
             sys.exit("no files")
-        inv = make_inventory(files, a.root or os.path.dirname(os.path.abspath(files[0])))
+        old = load_inventory(a.merge) if a.merge else None
+        unknown = set(a.add_rendition) - {os.path.basename(f) for f in files}
+        if unknown:
+            print("--add-rendition names files not given: %s" % sorted(unknown), file=sys.stderr)
+            return 2
+        inv = make_inventory(files, a.root or os.path.dirname(os.path.abspath(files[0])),
+                             old, set(a.add_rendition))
         s = json.dumps(inv, indent=1, ensure_ascii=False)
         if a.out:
             with open(a.out, "w", encoding="utf-8") as fh:
