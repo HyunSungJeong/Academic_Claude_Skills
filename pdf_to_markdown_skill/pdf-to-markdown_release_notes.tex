@@ -1,0 +1,342 @@
+\documentclass[11pt]{article}
+
+\usepackage[a4paper,margin=2.4cm]{geometry}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb}
+\usepackage{bm}
+\usepackage{booktabs,tabularx}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,urlcolor=blue!50!black]{hyperref}
+
+\setlist{itemsep=2pt,topsep=4pt}
+\newcommand{\file}[1]{\texttt{#1}}
+\newcommand{\cmd}[1]{\texttt{#1}}
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+\setlength{\parskip}{4pt}
+\setlength{\parindent}{0pt}
+\setlength{\emergencystretch}{3em}
+
+\title{\textbf{pdf-to-markdown}\\[2pt]\large Release notes, version 2.2}
+\author{}
+\date{11 October 2026}
+
+
+\begin{document}
+\maketitle
+\vspace{-3em}
+
+\section*{Summary}
+
+\file{pdf-to-markdown} is a Claude skill that converts PDFs of physics papers,
+notes and textbooks into Markdown with LaTeX mathematics. Every formula is
+transcribed from page images rather than from the PDF's text layer, then checked
+mechanically and proofread against the original.
+
+Version 2.2 makes the skill cheaper to run without changing how formulas are
+read: page strips are rendered at 170\,dpi instead of 300\,dpi, the text layer is
+no longer read page by page, every token of output is written once, and the
+preparation script prints everything the transcription needs on one line per
+page. On the five-page test note this is estimated to cut a run from about
+45{,}000 to about 30{,}000 tokens. The lower resolution was adopted only after a
+blind legibility test and an open blind transcription of two unseen pages, both
+without a single error (Section~\ref{sec:tests}).
+
+The evidence still comes from born-digital, single-column documents only. The
+known limitations in Section~\ref{sec:limits}, in particular scanned PDFs and
+two-column layouts, should be read before relying on the skill elsewhere.
+
+\section*{Version history}
+
+\begin{tabularx}{\linewidth}{@{}lL@{}}
+\toprule
+Version & Change \\
+\midrule
+1.0 & Draft only, never packaged. markitdown converted each page; pages whose
+      text contained many mathematical Unicode characters were re-transcribed by
+      Claude from 200\,dpi page images. \\
+2.0 & First packaged release. markitdown removed for PDFs; math detected by font;
+      strips cut between text lines; mechanical checks (\file{check.py}) and
+      side-by-side proofreading (\file{verify\_eqs.py}) added; evaluation
+      scripts added. \\
+2.1 & Scorer (\file{scripts/eval/mathcmp.py}) rewritten: content-based alignment,
+      tolerance for spelling-only variants, \cmd{--lenient} option, exact-match
+      counts. No change to conversion. \\
+2.2 & Token efficiency: strips at 170\,dpi; no page-by-page reading of the text
+      layer; per-page output files joined by the new \file{assemble.py};
+      compact \file{prepare.py} printout. No change to the transcription rules. \\
+\bottomrule
+\end{tabularx}
+
+\section{Why version 1.0 was replaced}
+
+Version~1.0 was run on the test document and compared with its LaTeX source.
+The text layer, through markitdown or otherwise, proved unusable for mathematics:
+
+\begin{itemize}
+\item \textbf{Invented tables.} markitdown 0.1.5 split ordinary sentences on page~2
+  into 60 rows of Markdown table cells.
+\item \textbf{Lost typefaces.} Calligraphic $\mathcal G$ and roman $\mathrm G$ both
+  came out as the same letter G, and bold $\bm\omega$ as a plain $\omega$. The test note's
+  notation rests on exactly this distinction.
+\item \textbf{Detached accents.} $\tilde{\mathrm K}=1/\Omega_{\bar 1}$ was extracted
+  as \texttt{K = 1 \~{} /}$\Omega$\texttt{\textasciimacron 1}, the tilde moved off the K and next to the 1.
+\item \textbf{Placeholder glyphs.} Integral and sum signs and brace pieces leaked
+  as \verb|(cid:90)|, \verb|(cid:88)| and similar codes.
+\item \textbf{Useless page flagging.} The Unicode-count rule flagged all five
+  pages, since every page of a physics note contains mathematics.
+\item \textbf{Broken paragraphs.} Page markers landed in the middle of sentences
+  that continue across a page break.
+\end{itemize}
+
+\section{What version 2 does}
+
+\begin{tabularx}{\linewidth}{@{}lL@{}}
+\toprule
+File & Role \\
+\midrule
+\file{SKILL.md} & Instructions to Claude: ground rules, the six-step procedure,
+  writing conventions, context budget. \\
+\file{scripts/prepare.py} & Per page: 170\,dpi strips cut in the gaps between
+  lines, a text layer for searching single words, the share of characters set in
+  math fonts, and the equation numbers printed at the right margin. Prints one
+  line per page: image or text, each strip with its $y$-range in points, tags. \\
+\file{scripts/assemble.py} & Joins the per-page Markdown files in page order;
+  rejoins a paragraph that a page break interrupted. \\
+\file{scripts/check.py} & Every formula must render in KaTeX; every printed
+  equation number must appear exactly once as \texttt{\textbackslash tag\{\}}; no
+  text-layer debris. \\
+\file{scripts/verify\_eqs.py} & Retypesets each numbered display equation with
+  pdflatex and places it under the PDF's original, four equations per sheet. \\
+\file{scripts/eval/mathcmp.py} & Formula-by-formula comparison with a LaTeX
+  source; works on any tool's Markdown (testing only). \\
+\file{scripts/eval/prosecmp.py} & Word-by-word prose comparison with a LaTeX
+  source (testing only). \\
+\bottomrule
+\end{tabularx}
+
+Writing conventions enforced by \file{SKILL.md}: typefaces reproduced exactly
+($\mathcal K$, $\mathrm K$, $\bm\Omega$, upright $\mathrm i$, $\mathrm d$,
+$\mathrm e$ where printed so); printed equation numbers used in
+\texttt{\textbackslash tag\{\}}, even when out of sequence; zoomed crops at
+500--600\,dpi before deciding any multi-character bar such as $\overline{j+1}$
+versus $\bar{j}+1$, any tilde, hat or prime, and the extent of every brace.
+
+\section{What changed in 2.2}
+
+\begin{itemize}
+\item \textbf{Strips at 170\,dpi.} \file{prepare.py} now renders strips at
+  170\,dpi by default. At 300\,dpi a strip was about 2{,}000\,px wide and was
+  downscaled by the model to an effective 232\,dpi anyway; at 170\,dpi it is about
+  1{,}100\,px wide and is seen as rendered. Strip tokens fall by about 46\%.
+\item \textbf{No reading of the text layer.} \file{SKILL.md} forbids reading
+  \file{page\_NNN.txt} as a whole; it may only be searched for one doubtful word.
+  Prose read from the strips was error-free in every test.
+\item \textbf{Every token of output written once.} Each page is written with
+  \cmd{create\_file} to its own \file{page\_NNN.md}. A page ending mid-paragraph
+  ends with the line \texttt{<!-- continues -->}. \file{assemble.py} joins the
+  pages and rejoins such paragraphs; corrections after checking and proofreading
+  are targeted \cmd{str\_replace} edits. The document is never re-typed.
+\item \textbf{Compact script output.} \file{prepare.py} prints one line per page
+  with the strip files, their $y$-ranges in points (for zooms) and the equation
+  tags, so \file{manifest.json} never needs to be opened.
+\item \textbf{Proofreading printout.} Step~5 now requires reading the full output
+  of \file{verify\_eqs.py} first: a \texttt{PROBLEM} line marks an equation that
+  could not be typeset and is therefore missing from the sheets. This is an
+  instruction only; the script itself is unchanged.
+\item \textbf{Documentation.} \cmd{--lenient}, exact-count reading of scores and
+  scoring other tools' output are now described in \file{SKILL.md}.
+\end{itemize}
+
+Estimated tokens for one run on the five-page test note:
+
+\begin{tabularx}{\linewidth}{@{}Lrr@{}}
+\toprule
+Item & 2.1 & 2.2 \\
+\midrule
+Page strips & 21{,}000 & 11{,}000 \\
+Proofreading sheets (7) & 10{,}000 & 10{,}000 \\
+Output Markdown & 6{,}000 & 6{,}000 \\
+Text layer read in full & up to 3{,}200 & 0 \\
+Second copy of the output when assembling & up to 6{,}000 & 0 \\
+Zooms, \file{SKILL.md}, manifest, script output & 5{,}000 & 4{,}000 \\
+\midrule
+Total & \textasciitilde 45{,}000--51{,}000 & \textasciitilde 31{,}000 \\
+\bottomrule
+\end{tabularx}
+
+Image tokens use Anthropic's published approximation of width $\times$
+height$/750$ after downscaling to a 1{,}568\,px long edge; treat them as
+estimates.
+
+\section{Test results}
+\label{sec:tests}
+
+Two documents with their LaTeX sources were available as ground truth: a
+five-page note on Eq.~(40) of Kugler, Lee \& von Delft (``Kugler note'') and a
+ten-page note on particle--vortex duality (``duality note''). Both are
+single-column and born-digital (pdf\TeX). All transcriptions were made from the
+images before the source was opened.
+
+\subsection*{Accuracy on the Kugler note}
+
+\begin{tabularx}{\linewidth}{@{}Lrr@{}}
+\toprule
+Measure & Whole document & Page 3 \\
+\midrule
+Displayed equations exactly correct & 25 / 26 & 8 / 8 \\
+Inline formulas exactly correct & 143 / 147 & 38 / 38 \\
+Prose & identical & 162 / 162 words \\
+\file{check.py} (KaTeX, tags, debris) & pass & pass \\
+\bottomrule
+\end{tabularx}
+
+The five whole-document mismatches render identically to the source:
+\verb|F_{\rm rest}| versus \verb|F_{\mathrm{rest}}|, the arrow written as the
+Unicode character U+21D2 instead of \verb|$\Rightarrow$|, parentheses outside
+rather than inside \verb|$...$|, and ``K-part'' written as text. With the 2.2
+pipeline (per-page files, \file{assemble.py}, \file{check.py},
+\file{verify\_eqs.py}) the assembled document was identical to the original
+transcription and scored the same.
+
+\subsection*{Blind legibility test (basis for 170\,dpi)}
+
+Sixteen items, each with two or three near-identical variants (for example
+$\omega'$ versus $\omega$, a bar over $j+1$ versus over $j$ alone, $\mathcal K$
+versus $\mathrm K$, $\tilde{\mathrm K}$ versus $\hat{\mathrm K}$, $+$ versus $-$ in
+an exponent, swapped indices) were typeset in the note's fonts. A script drew one
+variant per item at random for each resolution and kept the key hidden until all
+readings were recorded.
+
+\begin{tabularx}{\linewidth}{@{}Lrrrrrr@{}}
+\toprule
+Effective resolution (dpi) & 232 & 200 & 170 & 145 & 120 & 100 \\
+\midrule
+Image tokens relative to 232\,dpi & 100\% & 74\% & 54\% & 39\% & 27\% & 19\% \\
+Items read correctly & 16/16 & 16/16 & 16/16 & 16/16 & 16/16 & 16/16 \\
+\bottomrule
+\end{tabularx}
+
+The test is forced-choice (the candidate variants were known), which is easier
+than open transcription; at 120 and 100\,dpi about five readings felt uncertain,
+at 145\,dpi and above none did except one overbar extent. 170\,dpi was chosen to
+keep a wide margin.
+
+\subsection*{Open blind transcription at 170\,dpi}
+
+Pages 4 and 6 of the duality note, chosen as the two pages with the most
+math-font characters, were transcribed from 170\,dpi strips without zooms. Their
+hazards include tildes on $\phi$ and $f_{\mu\nu}$, daggers, integral limits
+$\int_x^\infty$ versus $\int_\infty^x$, signs in exponents and a primed $n'$.
+
+\begin{tabularx}{\linewidth}{@{}Lrrr@{}}
+\toprule
+Page & Displayed equations & Inline formulas & Prose \\
+\midrule
+4 & 4/4 & 34/34 & identical \\
+6 & 6/6 & 36/36 & identical \\
+\bottomrule
+\end{tabularx}
+
+All matches are strict (no \cmd{--lenient}). Caveat: the prose of these pages
+was already known from the text layer; only the mathematics was unseen.
+
+\subsection*{Proofreading test}
+
+Errors of random type were planted, with a hidden key, in random equations of a
+copy of the Kugler transcription; the sheets from \file{verify\_eqs.py} were then
+reviewed cold.
+
+\begin{tabularx}{\linewidth}{@{}Lrrrr@{}}
+\toprule
+Round & Planted & Caught on sheets & Caught by compile/KaTeX & Missed \\
+\midrule
+1 & 1 & 1 & -- & 0 \\
+2 & 8 & 5 & 3 & 0 \\
+\bottomrule
+\end{tabularx}
+
+Errors caught on the sheets were a dropped prime, three dropped bolds, a dropped
+bar and $\mathcal K$ turned roman; there were no false alarms. Three planted
+errors produced LaTeX that does not compile, so their equations never reached
+the sheets; the verifier reported them, but only in its text output, which led
+to the new instruction in step~5. Limits: nine errors in total, no sign flips
+or index swaps among them, and compile failures are partly an artifact of how
+the errors were planted.
+
+\textbf{Scorer validation.} Four realistic errors planted in the page-3
+transcription were all flagged at the right places, while spelling-only variants
+still scored 8/8 and 38/38. With the errors present the mean token similarity
+stayed at 0.993 and 0.999, which is why only exact counts are meaningful.
+
+\textbf{Not yet tested against Marker.} A page-3 comparison kit is provided
+separately (\file{page3\_comparison\_kit.zip}); Marker's model weights are hosted
+on \file{models.datalab.to} and \file{huggingface.co}, which Claude's sandbox
+cannot reach, so the kit must be run locally.
+
+\section{Changes considered and not made}
+
+\begin{itemize}
+\item \textbf{Selective proofreading (rejected).} Skipping ``simple'' equations
+  would save almost nothing: a classifier skipping only equations without bars,
+  primes, bold, typeface-sensitive letters, accents or braces skips 1 of 26 in
+  the Kugler note. Meanwhile the proofreading test found errors in the plainest
+  equations, such as $\mathcal G(\mathrm i\bm\omega)=0$.
+\item \textbf{Skipping strips without math fonts (deferred).} No strip of the
+  Kugler note and 4 of 39 strips of the duality note (6\% of strip tokens)
+  contain no math-font character; all four were genuinely free of mathematics.
+  8 of the duality note's 195 inline formulas are set entirely in text fonts
+  (\verb|+|, \verb|+1|, \verb|=|) and are invisible to the detector; here none fell
+  in a skippable strip. The change needs scan detection and hyphen repair of
+  text-layer prose first, and the benefit is small.
+\end{itemize}
+
+\section{Known limitations}
+\label{sec:limits}
+
+\begin{itemize}
+\item \textbf{Scanned PDFs (serious).} A scan has no fonts, so \file{prepare.py}
+  reports every page as \texttt{text-ok}. Until fixed, scanned pages must be
+  transcribed from images regardless of what the printout says.
+\item \textbf{Two-column layouts.} Equation numbers are detected only in the right
+  quarter of the page, so left-column equations are missed by the tag checklist;
+  proofreading crops span the full page width and include the other column.
+\item \textbf{Dotted equation numbers.} Tags such as (5.40) are not recognised.
+  \file{check.py} then reports a correctly transcribed
+  \texttt{\textbackslash tag\{5.40\}} as ``not printed in PDF'' and fails.
+\item \textbf{Proofreading sheets.} Equations that do not compile are left off the
+  sheets rather than shown as placeholders; adjacent equations of one
+  \texttt{align} environment are merged into one crop; large symbols can be
+  clipped at the crop edge.
+\item \textbf{Fonts.} Math detection matches known math font names. Documents
+  from Word, with unusual fonts, or with bitmap (Type~3) math fonts, as in older
+  arXiv PDFs, may be misclassified.
+\item \textbf{Self-proofreading.} Without a source, the side-by-side check is done
+  by the same model that made the transcription. Sheets cover numbered displays
+  only; unnumbered displays and inline math rely on the syntax check and on
+  re-reading the strips.
+\item \textbf{Context budget.} A 170\,dpi strip costs about 600 tokens and a
+  proofreading sheet about 1{,}500. A ten-page note fits in one conversation;
+  long papers and books should be converted one section or chapter at a time.
+\item \textbf{Narrow evidence.} Accuracy results come from seven transcribed
+  pages of two documents of the same kind.
+\end{itemize}
+
+\section{Installation and requirements}
+
+Upload \file{pdf-to-markdown.zip} in Claude under \emph{Customize $\rightarrow$
+Skills} and make sure code execution is enabled. If an earlier version is
+installed, replace it. The scripts need PyMuPDF and Pillow; \file{verify\_eqs.py}
+needs pdflatex and \file{check.py} needs Node.js, and \file{check.py} installs
+KaTeX itself if it is missing. All of these were present in Claude's sandbox
+during testing (PyMuPDF 1.28.2).
+
+\section{Planned next}
+
+Accept dotted equation numbers; show uncompilable equations as placeholder
+panels and crop \texttt{align} lines and large symbols correctly; treat every
+page without a text layer as image-only; detect columns and crop each one
+separately; test on a two-column journal page and a scanned textbook page; run
+the Marker comparison locally.
+
+\end{document}
