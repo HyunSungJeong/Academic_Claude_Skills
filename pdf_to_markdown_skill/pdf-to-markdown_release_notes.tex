@@ -17,7 +17,7 @@
 \setlength{\parindent}{0pt}
 \setlength{\emergencystretch}{3em}
 
-\title{\textbf{pdf-to-markdown}\\[2pt]\large Release notes, version 2.3}
+\title{\textbf{pdf-to-markdown}\\[2pt]\large Release notes, version 2.4}
 \author{}
 \date{11 October 2026}
 
@@ -33,12 +33,19 @@ notes and textbooks into Markdown with LaTeX mathematics. Every formula is
 transcribed from page images rather than from the PDF's text layer, then checked
 mechanically and proofread against the original.
 
-Version 2.3 adds figures. Each figure is found from its caption, rendered whole
-by a script, and embedded in the Markdown as image data, so the result is one
-self-contained \file{.md} file. Claude writes only a placeholder and the
-caption, never the image data, so figures add almost no tokens. On an
-eight-page, two-column PNAS paper all seven figures were found, cropped
-completely and embedded byte for byte.
+Version 2.4 delivers each conversion as files for a Claude Project: a text-only
+Markdown file named exactly like the original PDF, with every equation in
+LaTeX and no image data inside, plus one companion image per figure. Each
+figure appears in the Markdown as a link naming its companion file, followed by
+the transcribed caption. Version 2.3 had embedded the images in the Markdown as
+base64 text; Claude cannot see images in that form, and they cost roughly a
+hundred times more tokens than the same images uploaded as files, so 2.4
+replaces it.
+
+Version 2.3 added figures. Each figure is found from its caption and rendered
+whole by a script; Claude writes only a placeholder and the caption, never image
+data, so figures add almost no tokens. On an eight-page, two-column PNAS paper
+all seven figures were found and cropped completely.
 
 Version 2.2 made the skill cheaper to run without changing how formulas are
 read: page strips are rendered at 170\,dpi instead of 300\,dpi, the text layer is
@@ -76,6 +83,9 @@ Version & Change \\
 2.3 & Figures: new \file{figures.py} finds figures by caption and renders them;
       \file{assemble.py} embeds them as base64 data, giving one self-contained
       file. Text and math handling unchanged. \\
+2.4 & Output for Projects: text-only Markdown named exactly like the PDF, plus
+      companion images \texttt{NAME\_figN.png} linked from it; embedding
+      removed. \\
 \bottomrule
 \end{tabularx}
 
@@ -116,8 +126,9 @@ File & Role \\
   whole region at 200\,dpi, and writes a low-resolution check image with the crop
   outlined in red. \\
 \file{scripts/assemble.py} & Joins the per-page Markdown files in page order;
-  rejoins a paragraph that a page break interrupted; replaces figure
-  placeholders with the embedded images. \\
+  rejoins a paragraph that a page break interrupted; writes \file{NAME.md} and
+  the companion images \file{NAME\_figN.png}, turning each figure placeholder
+  into a link to its file. \\
 \file{scripts/check.py} & Every formula must render in KaTeX; every printed
   equation number must appear exactly once as \texttt{\textbackslash tag\{\}}; no
   text-layer debris. \\
@@ -139,6 +150,35 @@ versus $\bar{j}+1$, any tilde, hat or prime, and the extent of every brace;
 each figure as a placeholder \texttt{![Fig.\ N](figure:figN)} followed by its
 caption, transcribed like any other text.
 
+\section{What changed in 2.4}
+
+\begin{itemize}
+\item \textbf{Why.} Converted files are meant to be uploaded to a Claude
+  Project. Claude reads Markdown as text: a base64 image inside it is an
+  unreadable string of characters, not a picture. For the seven PNAS figures it
+  is an estimated 280{,}000--420{,}000 tokens (at 2--3 characters per token),
+  against about 3{,}400 tokens for the same figures uploaded as PNG files, and it
+  alone would push a Project close to its context limit, where retrieval mode
+  takes over and searches the files in chunks.
+\item \textbf{Text-only Markdown.} \file{assemble.py} no longer embeds images.
+  Each placeholder \texttt{![Fig.\ N](figure:figN)} becomes a relative link
+  \texttt{![Fig.\ N](<NAME\_figN.png>)}, and the image is copied to the output
+  folder under that name. The script refuses to write a Markdown file that
+  contains image data.
+\item \textbf{File names.} \texttt{NAME} is the original PDF's file name
+  without \texttt{.pdf}, unchanged: same characters, case, spaces and
+  underscores. The companion images are \file{NAME\_fig1.png},
+  \file{NAME\_fig2.png}, \dots, so figures of different papers cannot collide in
+  one Project, and the link in the Markdown tells Claude which file shows which
+  figure. In a folder holding both, a Markdown viewer also displays the figures.
+\item \textbf{Delivery.} Claude presents the Markdown first and then the
+  companion images in figure order, in one delivery, ready to upload. Images can
+  be added to a Project only where Claude needs to see a figure; the captions
+  stay in the text either way.
+\item \textbf{Embedding removed.} The self-contained file of version 2.3 is no
+  longer produced, to avoid two output modes being mixed up.
+\end{itemize}
+
 \section{What changed in 2.3}
 
 \begin{itemize}
@@ -156,10 +196,10 @@ caption, transcribed like any other text.
 \item \textbf{Crop checks.} For every figure a low-resolution view of its
   surroundings is written with the crop drawn as a red box; Claude confirms that
   nothing is cut off. Several check images can be combined into one view.
-\item \textbf{Embedding by script.} In the page Markdown Claude writes
-  \texttt{![Fig.\ N](figure:figN)} and the caption. \file{assemble.py}
-  replaces each placeholder with a base64 data URI and stops with an error if an
-  image is missing. Writing the data by hand would cost tens of thousands of
+\item \textbf{Embedding by script} (replaced by companion files in 2.4). In the
+  page Markdown Claude writes \texttt{![Fig.\ N](figure:figN)} and the caption.
+  \file{assemble.py} replaced each placeholder with a base64 data URI and stopped
+  with an error if an image was missing. Writing the data by hand would cost tens of thousands of
   output tokens per figure; this way the cost is a few hundred tokens of crop
   checking per figure.
 \item \textbf{Instructions.} \file{SKILL.md} gains the figure step, the
@@ -330,9 +370,11 @@ Measure & PNAS paper \\
 Figures found (captions ``Fig.~1''--``Fig.~7'') & 7 / 7 \\
 Crops complete, no running text inside & 7 / 7 \\
 Decorative graphics wrongly taken as figures & 0 \\
-Embedded images byte-identical to the rendered files & 7 / 7 \\
 Caption formulas passing KaTeX & 48 / 48 \\
-Size of the self-contained file & 835\,KB \\
+2.3: embedded images byte-identical to the rendered files & 7 / 7 \\
+2.3: size of the self-contained file & 835\,KB \\
+2.4: size of the text-only Markdown & 5\,KB \\
+2.4: companion images, correctly named and linked & 7 / 7 \\
 \bottomrule
 \end{tabularx}
 
@@ -346,6 +388,14 @@ byte-identically to version 2.2, and \file{check.py} still passed. Extraction,
 crop checks and caption reading for all seven figures cost about
 2{,}500 tokens. The caption accuracy was not scored, since the paper's source was
 not available.
+
+With version 2.4 the same test produced the Markdown file under the PDF's exact
+name and seven companion images named after it, each linked from its figure;
+\file{check.py} passed and no image data remained in the Markdown. The Kugler
+note again assembled to byte-identical text, now under its PDF's name. A file
+name with spaces, parentheses and an upper-case extension
+(\texttt{My Paper (2026) v2.PDF}) gave \file{My Paper (2026) v2.md} with working
+figure links.
 
 \section{Changes considered and not made}
 
@@ -381,8 +431,9 @@ not available.
   starts with ``Fig.'', ``Figure'' or ``FIG.''; captions above the figure, other
   labels such as ``Scheme~1'', figures split across columns or pages, and tables
   set as graphics need a manual crop. Text inside figures is part of the image
-  and not searchable. Embedded images display in most desktop Markdown editors
-  and previews; some web renderers strip data URIs.
+  and not searchable. The figure links display an image only when the
+  Markdown and its companion files sit in the same folder; in a Project,
+  Claude sees a figure only if its image file was uploaded too.
 \item \textbf{Dotted equation numbers.} Tags such as (5.40) are not recognised.
   \file{check.py} then reports a correctly transcribed
   \texttt{\textbackslash tag\{5.40\}} as ``not printed in PDF'' and fails.
