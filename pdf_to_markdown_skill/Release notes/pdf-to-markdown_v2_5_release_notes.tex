@@ -1,0 +1,427 @@
+% Release notes: pdf-to-markdown v2.5
+% Compile with: xelatex pdf-to-markdown_v2_5_release_notes.tex  (run twice)
+\documentclass[11pt,a4paper]{article}
+
+\newcommand\skillname{pdf-to-markdown}
+\newcommand\skillversion{2.5}
+\newcommand\skilldate{12 October 2026}
+
+% ---------------------------------------------------------------- layout
+\usepackage[margin=2.4cm,top=2.7cm,bottom=2.6cm,headheight=14pt]{geometry}
+\usepackage{amssymb}
+\usepackage{fontspec}
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+\setmonofont{DejaVu Sans Mono}[Scale=0.82]
+\usepackage{microtype}
+\usepackage{xcolor}
+\definecolor{accent}{HTML}{1F5F7A}
+\definecolor{codebg}{HTML}{F2F5F7}
+\definecolor{muted}{HTML}{6B7780}
+\usepackage{titlesec}
+\titleformat{\section}{\sffamily\Large\bfseries\color{accent}}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\sffamily\large\bfseries}{\thesubsection}{0.7em}{}
+\titlespacing*{\section}{0pt}{1.5em}{0.5em}
+\titlespacing*{\subsection}{0pt}{1.1em}{0.35em}
+\usepackage{enumitem}
+\setlist{itemsep=0.2em, topsep=0.35em}
+\usepackage{booktabs,tabularx,array}
+\renewcommand\tabularxcolumn[1]{>{\raggedright\arraybackslash}p{#1}}
+\setlength\extrarowheight{1pt}
+\usepackage[most]{tcolorbox}
+\tcbuselibrary{listings}
+\newtcblisting{cmd}{listing only, colback=codebg, colframe=codebg, boxrule=0pt,
+  arc=2pt, left=6pt, right=6pt, top=2pt, bottom=2pt, before skip=6pt, after skip=8pt,
+  listing options={basicstyle=\ttfamily\small, breaklines=true, columns=fullflexible,
+  keepspaces=true, upquote=true, breakindent=1.5em}}
+\newtcolorbox{glance}{enhanced, colback=accent!5, colframe=accent, boxrule=0.6pt,
+  arc=2pt, left=9pt, right=9pt, top=6pt, bottom=6pt,
+  fonttitle=\sffamily\bfseries, title=At a glance}
+\newtcolorbox{note}{enhanced, colback=accent!4, colframe=accent, boxrule=0pt,
+  leftrule=2.5pt, arc=0pt, left=8pt, right=8pt, top=5pt, bottom=5pt,
+  before skip=8pt, after skip=8pt}
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\sffamily\small\color{muted}\skillname\ v\skillversion}
+\fancyhead[R]{\sffamily\small\color{muted}Release notes}
+\fancyfoot[C]{\sffamily\small\color{muted}\thepage}
+\renewcommand\headrulewidth{0.3pt}
+\usepackage[colorlinks=true, linkcolor=accent, urlcolor=accent]{hyperref}
+\hypersetup{pdftitle={\skillname\ v\skillversion\ release notes},
+  pdfsubject={Claude skill release notes}}
+\DeclareUrlCommand\code{\urlstyle{tt}}
+\newcommand\step[1]{\textsf{\textbf{#1}}}
+
+\begin{document}
+
+% ---------------------------------------------------------------- title
+\thispagestyle{plain}
+\begin{flushleft}
+{\sffamily\small\color{muted}\MakeUppercase{Claude skill \textbullet{} Release notes}}\\[4pt]
+{\sffamily\fontsize{26}{30}\selectfont\bfseries\color{accent}\skillname}\\[6pt]
+{\sffamily\large Version \skillversion\quad\textcolor{muted}{|}\quad \skilldate}\\[2pt]
+{\color{accent}\rule{\linewidth}{0.8pt}}
+\end{flushleft}
+
+\begin{glance}
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\textbf{What it is} & A converter that turns a PDF of a paper, lecture notes or textbook
+  chapter into text-only Markdown with exact LaTeX mathematics, plus one companion PDF of its
+  figures. Every step is machine-checked. \\
+\textbf{When it runs} & When you ask Claude to convert a PDF to Markdown (\code{.md}). \\
+\textbf{What you get} & \code{NAME.md} and \code{NAME_figures.pdf}, ready to upload to a
+  Project. \\
+\textbf{Requires} & Claude with skills and code execution enabled. PyMuPDF and KaTeX are
+  installed on first use; pdflatex is used when present. \\
+\textbf{Install} & \textsf{Customize \textrightarrow{} Skills} (Section~\ref{sec:install}).
+\end{tabularx}
+\end{glance}
+
+% ---------------------------------------------------------------- 0
+\section{What's new in 2.5}\label{sec:new}
+
+Version 2.5 is a maintenance release. It fixes seven defects in the helper scripts that
+surfaced when converting a 21-page two-column APS paper with 131 numbered equations and six
+figures. The conversion procedure, the output format and the writing conventions are
+unchanged; transcriptions made with 2.4 remain valid.
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+\textbf{Script} & \textbf{Fix} \\
+\midrule
+\code{prepare.py} & \textbf{Printed page numbers decoded.} Page labels stored as UTF-16
+  strings (a byte-order mark followed by the text) were reported undecoded, e.g.\
+  \code{<FEFF0031>} for page~1. They are now decoded, and a document whose labels simply
+  repeat the PDF page numbers is reported as such. \\
+\code{prepare.py} & \textbf{Equation tags found in every column.} Tags were accepted only in
+  the right quarter of the page, so every tag in the left column of a two-column layout was
+  missed (63 of 131 in the test paper). Text columns are now detected per page, and a tag
+  is accepted when it is flush with the right edge of its own column. Inline references
+  such as ``Eq.~(7)'' at the end of a prose line are still rejected. Latin Modern math fonts
+  (\code{LMMath*}) are now recognised as math fonts. \\
+\code{figures.py} & \textbf{Figure crops kept inside their column.} Figures embedded as form
+  objects often declare a bounding box far larger than what they draw, and the crop spilled
+  into the neighbouring column; page numbers and running heads above a figure were also
+  included. The crop is now clipped to the caption's column, excludes page numbers and
+  running heads, and is trimmed to the pixels actually drawn. \\
+\code{figures.py} & \textbf{No captions from running text.} A caption now needs a separator
+  after its number (\emph{FIG.\,1.}, \emph{Figure~1:}, \emph{Fig.\,1~|}), so a sentence
+  beginning ``Figure~1(a), computed for\,\ldots'' is no longer taken for a second Fig.~1. \\
+\code{check.py} & \textbf{No false failures from missed tags.} A \verb|\tag| whose ``(N)'' is
+  in the text layer but was not detected as a tag is listed for a check by eye instead of
+  failing the run. With the tag fix above this list is normally empty. \\
+\code{verify_eqs.py} & \textbf{Every tagged equation on the sheets.} With all tags detected,
+  no equation is left off the proofreading sheets (68 of 131 were before). \\
+\code{verify_eqs.py} & \textbf{Proofreading crops show the whole equation.} Crops spanned the
+  full text width and were bounded by lines of the other column, so they were about one line
+  high and misaligned. A crop now covers only the equation's own column, between the nearest
+  prose lines of that column (an equation row that starts at the margin is not mistaken for
+  prose), with room for multi-line displays and over-wide rows. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\noindent Effect on the test paper:
+\begin{center}
+\small
+\begin{tabular}{@{}l l l@{}}
+\toprule
+ & \textbf{2.4} & \textbf{2.5} \\
+\midrule
+Equation tags detected & 68 of 131 & 131 of 131 \\
+\code{check.py} & FAIL (63 false misses) & PASS \\
+Equations on proofreading sheets & 68 & 131 \\
+Figure crops correct without manual rework & 2 of 6 & 6 of 6 \\
+False captions & 1 & 0 \\
+\bottomrule
+\end{tabular}
+\end{center}
+A single-column test document gives the same tags and figure as in 2.4, plus the corrected
+caption handling.
+
+\begin{note}
+\textbf{Upgrading.} Replace the installed 2.4 with the 2.5 ZIP (Section~\ref{sec:install}).
+\code{SKILL.md} changes only where it describes what the scripts do; there is nothing new to
+learn and no need to reconvert existing transcriptions.
+\end{note}
+
+% ---------------------------------------------------------------- 1
+\section{Overview}
+
+Mathematics extracted from a PDF's text layer is unreliable. Calligraphic, roman and bold
+letters merge; accents detach; sub- and superscripts flatten; integral and sum signs turn into
+placeholder codes. Reading every equation from page images avoids this, but repeating that
+work in every conversation is slow and costs a lot of context.
+
+\skillname{} does that work \emph{once}. Claude transcribes each page from rendered images
+into Markdown, writing every formula, inline or displayed, as LaTeX read off the image. The
+result is then checked by script and proofread against the original. After conversion,
+Claude can read the document as clean source in any later conversation, at a fraction of the
+cost of the original PDF and without the risk of a corrupted text layer.
+
+% ---------------------------------------------------------------- 2
+\section{Outputs}
+
+Both files are named after the original PDF exactly as uploaded, with the same characters,
+case, spaces and underscores.
+
+\subsection{\texorpdfstring{\texttt{NAME.md}}{NAME.md}: the transcription}
+\begin{itemize}
+\item \textbf{Text only.} No image data is embedded, so the file stays small and fully searchable.
+\item \textbf{A legend on the first line} identifies the file as a transcription and explains its page markers.
+\item \textbf{Page markers.} Every PDF page opens with \texttt{<!-{}- page N -{}->}, or
+  \texttt{<!-{}- page N (printed M) -{}->} when the number printed on the page differs from its
+  position in the file. Answers drawn from the transcription can therefore cite pages. Where a
+  paragraph runs across a page break, it is rejoined and the marker stands inline at the break.
+\item \textbf{Exact mathematics.} Inline math uses \code{$...$}. Displays use
+  \code{$$...$$} with \verb|\tag{N}| carrying the \emph{printed} equation number, even
+  when numbers are out of sequence. Typeface is reproduced exactly (\verb|\mathcal|,
+  \verb|\mathrm|, \verb|\boldsymbol|, upright constants where printed). Only KaTeX- and
+  MathJax-compatible commands are used, with no custom macros.
+\item \textbf{Faithful to the original.} Headings, run-in paragraph heads and the document's
+  own cross-reference style are kept. Apparent typos are reproduced, not corrected.
+\item \textbf{Figure placeholders.} Each figure becomes a line naming where to find it,
+  followed by its transcribed caption.
+\end{itemize}
+
+\noindent An illustrative excerpt:
+\begin{cmd}
+<!-- Transcription of example.pdf. "page N" markers give the PDF page on which the following text starts; "printed M" is the page number printed on that page. -->
+
+<!-- page 1 (printed 213) -->
+
+## 2.1 Linear response
+
+The retarded correlation function is
+
+$$ C^{\mathrm{R}}(t) = -\mathrm{i}\,\theta(t)\,\langle [\hat A(t), \hat B(0)] \rangle \tag{2.14} $$
+
+*[Fig. 3: example_figures.pdf, page 1]*
+
+**Fig. 3.** Real and imaginary parts of the response function.
+\end{cmd}
+
+\subsection{\texorpdfstring{\texttt{NAME\_figures.pdf}}{NAME\_figures.pdf}: the figures}
+All figures are packed into one PDF at native size and in order of appearance. Each is
+labelled with its figure number and the document page it comes from. Packing is adaptive:
+figures are added to a page only while every figure keeps at least 150\,dpi effective
+resolution when Claude views the page, so small labels stay legible at the lowest token cost.
+A document without figures gets no figures PDF. Text inside figures (axis labels, legends,
+diagram labels) is part of the image and is not transcribed. Every caption is in the
+Markdown, so the figures PDF can be left out of a Project when no figure needs to be seen.
+
+% ---------------------------------------------------------------- 3
+\section{How it works}
+
+\subsection{Ground rules}
+\begin{itemize}
+\item \textbf{No mathematics from the text layer.} Every formula is transcribed from the page image.
+\item \textbf{The text layer is a lookup, not a source.} It is used only to place strip cuts,
+  find tags, page numbers and captions, and resolve a single doubtful prose word.
+\item \textbf{Mandatory zooms} for the distinctions most often misread: bars spanning several
+  characters, tildes and hats, primes, the extent of under- and overbraces (including a
+  leading minus sign), bold versus regular, and calligraphic versus roman versus italic.
+\item \textbf{Every token is written once.} Pages go to separate files, the document is joined
+  by script, and corrections are targeted edits. The document is never re-output in full.
+\item \textbf{Source first.} If the LaTeX source is available, Claude converts it with pandoc
+  and normalises the result instead of transcribing images.
+\end{itemize}
+
+\subsection{Pipeline}
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{}l l X@{}}
+\toprule
+\textbf{Step} & \textbf{Tool} & \textbf{What happens} \\
+\midrule
+1 Prepare & \code{prepare.py} & Renders each page at 170\,dpi as horizontal strips, cut in the
+  gaps between lines so no line or equation is sliced. Reports per page whether it contains
+  math, the strips' positions, the printed equation tags (found at the right edge of each
+  text column, in single- and multi-column layouts), and the printed page number (from the
+  PDF's page labels or a consistent header/footer offset). \\
+2 Figures & \code{figures.py} & Locates each figure from its caption (\emph{Fig.\,N},
+  \emph{Figure\,N}, \emph{FIG.\,N}, followed by a separator) and renders the whole region,
+  vector art and embedded images together, at 200\,dpi, kept inside the caption's column and
+  trimmed to what is drawn. Writes a check image with the crop outlined, which Claude
+  inspects before going on. \\
+3 Transcribe & Claude & Views each page's strips in order and writes that page to its own
+  Markdown file. Small or ambiguous symbols are re-rendered at 500--600\,dpi. \\
+4 Assemble & \code{assemble.py} & Joins the pages, rejoins paragraphs split by page breaks,
+  adds the legend and page markers, packs the figures PDF and resolves figure placeholders. \\
+5 Check & \code{check.py} & Runs the mechanical checks (Section~\ref{sec:checks}). Claude
+  fixes each finding with a targeted edit. \\
+6 Proofread & \code{verify_eqs.py} & Builds proofreading sheets for the displayed equations;
+  Claude compares them symbol by symbol. \\
+7 Deliver & Claude & Presents \code{NAME.md} and \code{NAME_figures.pdf}, with a short report. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Quality checks}\label{sec:checks}
+\begin{itemize}
+\item \code{check.py} verifies that every formula parses in KaTeX, that every printed equation
+  tag appears exactly once, that no text-layer debris (such as \code{(cid:NN)} codes) remains,
+  and that every PDF page has exactly one marker, in order. A tag that is printed but was
+  not detected as a tag is listed for a check by eye rather than failed.
+\item \code{verify_eqs.py} typesets each displayed equation from the transcription with
+  pdflatex and places it under the crop of the same equation from the PDF, four per sheet.
+  The crop covers the equation's own column, between the nearest prose lines.
+  Equations that cannot be placed on a sheet are reported as problems to fix.
+\item Inline mathematics is not covered by the sheets. Claude re-reads it on the strips for
+  any line with indices or accents.
+\item The final report states pages converted (with the printed range), figures and
+  figures-PDF pages, check results, and any symbol left ambiguous, with its location.
+\end{itemize}
+
+% ---------------------------------------------------------------- 4
+\section{Requirements}
+\begin{itemize}
+\item A Claude plan with skills available and \textbf{code execution} enabled in Claude's settings.
+\item Python 3 with \textbf{PyMuPDF} and Pillow. PyMuPDF is installed with pip on first use if missing.
+\item \textbf{Node.js} with \textbf{KaTeX}, for the syntax check. KaTeX is installed with npm
+  on first use if missing. These installs need the code-execution environment to reach the
+  Python and npm package registries.
+\item \textbf{pdflatex} for the proofreading sheets. If it is absent, that step is skipped and
+  Claude proofreads from the strips instead.
+\item \textbf{pandoc}, only when converting from LaTeX source.
+\end{itemize}
+
+% ---------------------------------------------------------------- 5
+\section{Installation}\label{sec:install}
+
+\begin{enumerate}
+\item \step{Package the skill.} The skill is a folder named \code{pdf-to-markdown} containing
+  \code{SKILL.md} and \code{scripts/}. If you received it as a ZIP, use that file as it is.
+  Otherwise, zip the folder so that the archive contains the folder itself, with
+  \code{SKILL.md} directly inside it:
+\begin{cmd}
+zip -r pdf-to-markdown.zip pdf-to-markdown
+\end{cmd}
+\item \step{Enable code execution} in Claude's settings if it is not already on. If your
+  organisation restricts network access from code execution, make sure the Python and npm
+  package registries are allowed.
+\item \step{Upload.} Open \textsf{Customize \textrightarrow{} Skills}, choose to upload a
+  skill, and select the ZIP.
+\item \step{Turn it on.} Check that \emph{pdf-to-markdown} appears in the list and is enabled.
+\item \step{Verify.} In a new chat, attach a short PDF with a few equations and ask
+  \emph{``Convert this PDF to Markdown.''} Claude should read the skill, run \texttt{prepare.py},
+  and finish by presenting \code{NAME.md} (and \code{NAME_figures.pdf} if the document has
+  figures).
+\end{enumerate}
+
+\begin{note}
+\textbf{Updating.} Keep only one copy installed. Remove the previous version and upload the
+new ZIP in its place. The installed version is recorded in the \code{metadata.version} field
+of \code{SKILL.md}. Transcriptions made with earlier versions remain valid files; reconvert a
+document only if you want it in the current output format.
+\end{note}
+
+% ---------------------------------------------------------------- 6
+\section{Usage}
+
+\subsection{Converting}
+Attach the PDF and ask for a conversion, for example:
+\begin{itemize}
+\item \emph{``Convert this paper to Markdown.''}
+\item \emph{``Convert Chapter 3 (pages 41--68) of this book to Markdown.''}
+\item \emph{``Here is the PDF and its LaTeX source; convert it to Markdown.''}
+\end{itemize}
+Download both files when the conversion finishes.
+
+\subsection{Using the result in a Project}
+Upload \code{NAME.md}, and \code{NAME_figures.pdf} if you need the figures, to the Project's
+knowledge. You can remove the original PDF from the Project or keep it alongside; if both are
+present, the transcription is used for content and the PDF only for questions about the page
+itself. With the companion skill \textbf{academic-pdf-reading} installed, Claude recognises the
+transcription automatically, quotes it as source and cites its page markers.
+
+\subsection{Budget}
+Conversion is the expensive step, and it happens once.
+\begin{center}
+\small
+\begin{tabular}{@{}l r@{}}
+\toprule
+\textbf{Item} & \textbf{Approximate cost} \\
+\midrule
+One 170\,dpi strip & 600 tokens \\
+One page (4--5 strips) & 2{,}500--3{,}000 tokens, plus zooms \\
+One proofreading sheet (four equations) & 1{,}500 tokens \\
+Figure crop checks & a few hundred tokens each \\
+\bottomrule
+\end{tabular}
+\end{center}
+A ten-page note fits comfortably in one conversation. For a long paper or a book, convert one
+chapter or section per conversation; Claude says so at the start.
+
+% ---------------------------------------------------------------- 7
+\section{Limitations}
+\begin{itemize}
+\item \textbf{Captions drive figure detection.} Figures without a \emph{Fig.}/\emph{Figure}
+  caption, or whose automatic crop is wrong, are rendered by hand, which Claude does when the
+  crop check shows a problem.
+\item \textbf{Figure text is not transcribed.} Questions about what a figure shows need the figures PDF.
+\item \textbf{Inline math is proofread on the strips}, not on the sheets, so it relies on the
+  mandatory zooms and a re-read rather than a side-by-side comparison.
+\item \textbf{Oversized figures} that fall below 150\,dpi even alone on a page are reported
+  with a warning, not shrunk.
+\item \textbf{Born-digital PDFs are the intended input.} The scripts use the text layer for
+  geometry (strip cuts, tags, page numbers, captions). Scanned documents without a usable text
+  layer get less help from them.
+\item \textbf{Section-numbered equation tags} such as (2.14) are not detected as tags. The
+  transcription still carries them in \verb|\tag{2.14}| and \code{check.py} lists them for a
+  check by eye, but they do not reach the proofreading sheets; Claude proofreads them on the
+  strips.
+\item \textbf{Proofreading crops may include a neighbouring line} when the line just above or
+  below an equation is very short (for example ``with $z \in \mathbb{C}$.''). This is harmless.
+\item \textbf{Long documents must be split} across conversations because of the context cost.
+\item \textbf{Faithful, not corrected.} Typos and inconsistencies in the original are reproduced as printed.
+\end{itemize}
+
+% ---------------------------------------------------------------- 8
+\section{For maintainers: regression tests}
+When a LaTeX source exists for a test document, two scripts measure conversion quality. They
+work on any tool's Markdown output, not only this skill's.
+\begin{cmd}
+python3 scripts/eval/mathcmp.py SOURCE.tex NAME.md [--lenient]
+python3 scripts/eval/prosecmp.py SOURCE.tex NAME.md
+\end{cmd}
+\code{mathcmp.py} compares every display and inline formula token by token, after expanding
+zero-argument \verb|\newcommand|s. The \code{--lenient} option also forgives upright versus
+italic i, d and e. Count exact matches: mean similarity stays high even when formulas are
+wrong. \code{prosecmp.py} compares the prose word by word. Remaining differences are often
+spelling-only (\verb|F_{\rm rest}| versus \verb|F_\mathrm{rest}|) and should be judged
+individually.
+
+% ---------------------------------------------------------------- 9
+\section{Working with academic-pdf-reading}
+The two skills are designed as a pair. \textbf{pdf-to-markdown} spends the image-reading effort
+once and produces a transcription in a documented format: a legend line, page markers with
+printed page numbers, \verb|\tag|ged equations and figure placeholders.
+\textbf{academic-pdf-reading} recognises that format, reads it as source without re-verifying
+it against page images, opens the figures PDF for figure questions, and escalates only when
+the transcription is contradicted or structurally defective.
+
+% ---------------------------------------------------------------- 10
+\section{Package contents}
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+\textbf{File} & \textbf{Purpose} \\
+\midrule
+\code{SKILL.md} & The conversion procedure: ground rules, steps, writing conventions, budget. \\
+\code{scripts/prepare.py} & Page strips, math detection, equation tags, printed page numbers. \\
+\code{scripts/figures.py} & Figure detection, rendering and crop-check images. \\
+\code{scripts/assemble.py} & Joins pages, adds the legend and page markers, packs the figures PDF. \\
+\code{scripts/check.py} & KaTeX syntax, equation-tag, debris and page-marker checks. \\
+\code{scripts/verify_eqs.py} & Side-by-side proofreading sheets for displayed equations. \\
+\code{scripts/eval/mathcmp.py} & Regression test: formulas against a LaTeX source. \\
+\code{scripts/eval/prosecmp.py} & Regression test: prose against a LaTeX source. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\end{document}

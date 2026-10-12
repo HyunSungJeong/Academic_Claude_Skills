@@ -18,7 +18,9 @@ if not shutil.which('pdflatex'): sys.exit('pdflatex not found: skip this step an
 md = open(a.md).read(); man = json.load(open(os.path.join(a.work, 'manifest.json')))
 doc = pymupdf.open(man['source'])
 out = os.path.join(a.work, 'verify'); os.makedirs(out, exist_ok=True)
-where = {t['tag']: (p['page'], t['y'], p['clip_x']) for p in man['pages'] for t in p['equation_tags']}
+where = {t['tag']: (p['page'], t['y'], t.get('col', p['clip_x'])) for p in man['pages'] for t in p['equation_tags']}
+MATH_FONT = re.compile(r'(CMMI|CMSY|CMEX|CMBSY|MSAM|MSBM|EUFM|EUSM|RSFS|STIXMath|CambriaMath|XITSMath|'
+                       r'LatinModernMath|LMMath|NewCMMath|Symbol|MTMI|MTSY)', re.I)
 
 def trim(im, pad=12):
     bbox = ImageOps.invert(im.convert('L')).point(lambda v: 255 if v > 30 else 0).getbbox()
@@ -26,19 +28,30 @@ def trim(im, pad=12):
 
 def original(tag):
     pno, y, (x0, x1) = where[tag]; page = doc[pno - 1]
-    raw = [(l['bbox'], ''.join(s['text'] for s in l['spans']).strip())
-           for b in page.get_text('dict')['blocks'] for l in b.get('lines', [])]
     H = page.rect.height
-    footer = [bb for bb, t in raw if re.fullmatch(r'[-–—\s]*\d{1,4}[-–—\s]*', t) and bb[1] > 0.88 * H]
-    ls = sorted((bb for bb, t in raw if t and bb not in footer), key=lambda b: b[1])
-    margin = min(b[0] for b in ls)
-    # the equation sits between the nearest prose lines (lines starting at the left margin) above and below
-    prose = [b for b in ls if b[0] <= margin + 15]
+    raw = []
+    for b in page.get_text('dict')['blocks']:
+        for l in b.get('lines', []):
+            sp = [s for s in l['spans'] if s['text'].strip()]
+            if not sp: continue
+            n = sum(len(s['text'].strip()) for s in sp)
+            m = sum(len(s['text'].strip()) for s in sp if MATH_FONT.search(s['font']))
+            # letters set in text fonts (word spaces are often missing in this mode, so count letters)
+            words = sum(len(re.findall(r'[A-Za-z]', s['text'])) for s in sp if not MATH_FONT.search(s['font']))
+            raw.append((l['bbox'], words, m / n))
+    # only this equation's column
+    raw = [r for r in raw if x0 - 5 <= (r[0][0] + r[0][2]) / 2 <= x1 + 5]
+    footer = [bb for bb, w, _ in raw if w == 0 and bb[1] > 0.88 * H]
+    # the equation sits between the nearest prose lines above and below: lines that start at the
+    # column's left edge and are mostly text font (an equation row such as '= S^{1/2} ...' that
+    # starts near the margin is mostly math font and does not count)
+    prose = [bb for bb, w, mf in raw if bb[0] <= x0 + 15 and mf < 0.5 and bb not in footer
+             and w >= 8]                         # real words, not an equation row such as 'G(z) = ...'
     above = [b[3] for b in prose if (b[1] + b[3]) / 2 < y - 4]
     below = [b[1] for b in prose + footer if (b[1] + b[3]) / 2 > y + 4]
-    top = max(max(above, default=y - 60), y - 70)
-    bot = min(min(below, default=y + 60), y + 70)
-    pix = page.get_pixmap(dpi=200, clip=pymupdf.Rect(x0, top, x1, bot + 1))
+    top = max(max(above, default=y - 120), y - 160)
+    bot = min(min(below, default=y + 120), y + 160)
+    pix = page.get_pixmap(dpi=200, clip=pymupdf.Rect(x0 - 4, top + 1, x1 + 10, bot - 1))  # +10: overfull rows stick out
     return trim(Image.frombytes('RGB', (pix.width, pix.height), pix.samples))
 
 PRE = r'''\documentclass[11pt]{article}\usepackage{amsmath,amssymb,mathtools,bm}

@@ -20,7 +20,43 @@ and assemble.py embeds the image itself, so the output is one self-contained fil
 import sys, os, re, argparse, statistics
 import pymupdf
 
-CAP = re.compile(r'\s*(?:Fig\.|Figure|FIG\.)\s*(\d+)')
+# a caption is "Fig. 3." / "FIG. 3:" / "Figure 3 |" -- the number must be followed by a separator,
+# so body text such as "Figure 1(a), computed for ..." is not taken for a caption
+CAP = re.compile(r'\s*(?:Fig\.|Figure|FIG\.)\s*(\d+)\s*[.:|\u2014\u2013]')
+BARE_NUM = re.compile(r'[-\u2013\u2014\s]*\d{1,4}[-\u2013\u2014\s]*')
+
+
+def text_columns(lines, W):
+    """Text columns [(x0, x1)] from prose lines (same method as prepare.py)."""
+    long = [r for r, t, _ in lines if len(t) >= 35]
+    if not long: return [(0.0, W)]
+    # column starts: left edges shared by many prose lines (centred titles, affiliations and
+    # indented first lines do not reach the count)
+    xs = sorted(b.x0 for b in long)
+    need = max(3, 0.06 * len(long))
+    merged = []                          # greedy left to right: a start supported by enough lines
+    for x in xs:                         # beginning within 16 pt of it (covers indented first lines)
+        if merged and x - merged[-1] < 20: continue
+        if sum(x <= v <= x + 16 for v in xs) >= need: merged.append(x)
+    if not merged: return [(min(b.x0 for b in long), max(b.x1 for b in long))]
+    cols = []
+    for x in merged:
+        x1s = sorted(b.x1 for b in long if x - 4 <= b.x0 <= x + 20)
+        cols.append((float(x), x1s[len(x1s) // 2]))
+    return cols
+
+
+def ink_bbox(page, reg):
+    """Shrink reg to the non-white pixels inside it (form XObjects often declare a bounding
+    box far larger than what they draw)."""
+    pix = page.get_pixmap(dpi=72, clip=reg, colorspace=pymupdf.csGRAY)
+    w, h, s = pix.width, pix.height, pix.samples
+    rows = [y for y in range(h) if min(s[y * w:(y + 1) * w]) < 245]
+    colsx = [x for x in range(w) if min(s[x::w][:h]) < 245]
+    if not rows or not colsx: return reg
+    sx, sy = reg.width / w, reg.height / h
+    return pymupdf.Rect(reg.x0 + colsx[0] * sx, reg.y0 + rows[0] * sy,
+                        reg.x0 + (colsx[-1] + 1) * sx, reg.y0 + (rows[-1] + 1) * sy)
 ap = argparse.ArgumentParser()
 ap.add_argument('pdf'); ap.add_argument('work')
 ap.add_argument('--dpi', type=int, default=200)
@@ -40,6 +76,11 @@ for pno, page in enumerate(doc, 1):
             if t:
                 lines.append((pymupdf.Rect(l['bbox']), t, max(s['size'] for s in l['spans'])))
     if not lines: continue
+    W, H = page.rect.width, page.rect.height
+    # running heads and page numbers are never part of a figure
+    lines = [(r, t, sz) for r, t, sz in lines
+             if not ((r.y1 < 0.08 * H or r.y0 > 0.92 * H) and (BARE_NUM.fullmatch(t) or sz < 9))]
+    cols = text_columns(lines, W)
     body = statistics.mode(round(sz * 2) / 2 for _, t, sz in lines if len(t) > 30) if any(len(t) > 30 for _, t, _ in lines) else 10
     caps = [(pymupdf.Rect(b[:4]), CAP.match(b[4]).group(1)) for b in page.get_text('blocks') if CAP.match(b[4])]
     graphics = [pymupdf.Rect(dr['rect']) for dr in page.get_drawings()]
@@ -64,7 +105,14 @@ for pno, page in enumerate(doc, 1):
             print(f'fig{num} p{pno}: caption found but no graphics above it -> place by hand or skip'); continue
         reg = pymupdf.Rect(items[0])
         for r in items[1:]: reg |= r
-        reg = (reg + (-3, -3, 3, 3)) & page.rect
+        # keep the crop inside the caption's column(s), extended halfway into each gutter
+        inside = [c for c in cols if c[1] > cap.x0 and c[0] < cap.x1]
+        if inside:
+            k0, k1 = cols.index(inside[0]), cols.index(inside[-1])
+            lo = (cols[k0 - 1][1] + cols[k0][0]) / 2 if k0 > 0 else 0
+            hi = (cols[k1][1] + cols[k1 + 1][0]) / 2 if k1 + 1 < len(cols) else W
+            reg &= pymupdf.Rect(lo, 0, hi, H)
+        reg = (ink_bbox(page, reg & page.rect) + (-3, -3, 3, 3)) & page.rect
         pix = page.get_pixmap(dpi=a.dpi, clip=reg)
         data, ext = pix.tobytes('png'), 'png'
         if len(data) > a.max_kb * 1024:

@@ -1,0 +1,374 @@
+% Release notes: academic-pdf-reading v1.3.0
+% Compile with: xelatex academic-pdf-reading_v1.3.0_release_notes.tex  (run twice)
+\documentclass[11pt,a4paper]{article}
+
+\newcommand\skillname{academic-pdf-reading}
+\newcommand\skillversion{1.3.0}
+\newcommand\skilldate{11 October 2026}
+
+% ---------------------------------------------------------------- layout
+\usepackage[margin=2.4cm,top=2.7cm,bottom=2.6cm,headheight=14pt]{geometry}
+\usepackage{fontspec}
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+\setmonofont{DejaVu Sans Mono}[Scale=0.82]
+\usepackage{microtype}
+\usepackage{xcolor}
+\definecolor{accent}{HTML}{1F5F7A}
+\definecolor{codebg}{HTML}{F2F5F7}
+\definecolor{muted}{HTML}{6B7780}
+\usepackage{titlesec}
+\titleformat{\section}{\sffamily\Large\bfseries\color{accent}}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\sffamily\large\bfseries}{\thesubsection}{0.7em}{}
+\titlespacing*{\section}{0pt}{1.5em}{0.5em}
+\titlespacing*{\subsection}{0pt}{1.1em}{0.35em}
+\usepackage{enumitem}
+\setlist{itemsep=0.2em, topsep=0.35em}
+\usepackage{booktabs,tabularx,array}
+\renewcommand\tabularxcolumn[1]{>{\raggedright\arraybackslash}p{#1}}
+\setlength\extrarowheight{1pt}
+\usepackage[most]{tcolorbox}
+\tcbuselibrary{listings}
+\newtcblisting{cmd}{listing only, colback=codebg, colframe=codebg, boxrule=0pt,
+  arc=2pt, left=6pt, right=6pt, top=2pt, bottom=2pt, before skip=6pt, after skip=8pt,
+  listing options={basicstyle=\ttfamily\small, breaklines=true, columns=fullflexible,
+  keepspaces=true, upquote=true, breakindent=1.5em}}
+\newtcolorbox{glance}{enhanced, colback=accent!5, colframe=accent, boxrule=0.6pt,
+  arc=2pt, left=9pt, right=9pt, top=6pt, bottom=6pt,
+  fonttitle=\sffamily\bfseries, title=At a glance}
+\newtcolorbox{note}{enhanced, colback=accent!4, colframe=accent, boxrule=0pt,
+  leftrule=2.5pt, arc=0pt, left=8pt, right=8pt, top=5pt, bottom=5pt,
+  before skip=8pt, after skip=8pt}
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\sffamily\small\color{muted}\skillname\ v\skillversion}
+\fancyhead[R]{\sffamily\small\color{muted}Release notes}
+\fancyfoot[C]{\sffamily\small\color{muted}\thepage}
+\renewcommand\headrulewidth{0.3pt}
+\usepackage[colorlinks=true, linkcolor=accent, urlcolor=accent]{hyperref}
+\hypersetup{pdftitle={\skillname\ v\skillversion\ release notes},
+  pdfsubject={Claude skill release notes}}
+\DeclareUrlCommand\code{\urlstyle{tt}}
+\newcommand\step[1]{\textsf{\textbf{#1}}}
+
+\begin{document}
+
+% ---------------------------------------------------------------- title
+\thispagestyle{plain}
+\begin{flushleft}
+{\sffamily\small\color{muted}\MakeUppercase{Claude skill \textbullet{} Release notes}}\\[4pt]
+{\sffamily\fontsize{26}{30}\selectfont\bfseries\color{accent}\skillname}\\[6pt]
+{\sffamily\large Version \skillversion\quad\textcolor{muted}{|}\quad \skilldate}\\[2pt]
+{\color{accent}\rule{\linewidth}{0.8pt}}
+\end{flushleft}
+
+\begin{glance}
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\textbf{What it is} & An error-averse protocol that makes Claude read academic papers and
+  textbooks without silently corrupting their mathematics. \\
+\textbf{When it runs} & Whenever you ask about an equation, derivation, figure, page, section or
+  notation in a paper or textbook you uploaded or keep in a Project. \\
+\textbf{What it ships} & \code{SKILL.md}, a reference on project protocols, and
+  \code{triage.py}, a deterministic measurement script. \\
+\textbf{Requires} & Claude with skills and code execution enabled. Python 3.8+; poppler-utils
+  and Pillow are used when present. No network access. \\
+\textbf{Install} & \textsf{Customize \textrightarrow{} Skills} (Section~\ref{sec:install}).
+\end{tabularx}
+\end{glance}
+
+% ---------------------------------------------------------------- 1
+\section{Overview}
+
+Text extraction from scientific documents fails \emph{silently}. A minus sign vanishes, a
+superscript $-1$ comes out as a subtraction, an overbar disappears, a prime turns into the
+digit 0, and calligraphic and roman letters merge. The result still looks like plausible
+mathematics, so neither the reader nor Claude notices that the formula being discussed is
+not the one on the page.
+
+\skillname{} gives Claude a fixed procedure that prevents a damaged text layer from reaching
+an answer as if it were the document's content. Claude uses the text layer to \emph{find}
+things and reads everything mathematical from the \emph{page image}. Every reading fact
+carries its provenance, and anything that could not be verified is labelled as such.
+
+The skill triggers on its own when Claude is asked to explain, quote, check or transcribe
+material from a paper or textbook; when a file named \code{.pdf} turns out not to be a PDF;
+and when you ask Claude to create, check or update a project reading protocol
+(Section~\ref{sec:protocol}).
+
+% ---------------------------------------------------------------- 2
+\section{What the skill does}
+
+\subsection{Core policy}
+These rules hold for every file and every question:
+\begin{itemize}
+\item \textbf{Two channels, two jobs.} The text channel is for locating content and for prose.
+  The image channel is for mathematics, figures, tables, and anything whose meaning depends on
+  position or typeface.
+\item \textbf{No mathematics from the text layer.} No sign, index, exponent, bar, hat, tilde,
+  prime, dagger or typeface distinction is quoted from extracted text. It is read from the page
+  image, cropped and upscaled where needed. If a file has no image channel, its mathematics is
+  labelled \emph{``text-layer reading, unverified''}.
+\item \textbf{Source outranks rendering.} If the LaTeX source or a pdf-to-markdown
+  transcription of a document is available, Claude reads that instead.
+\item \textbf{Provenance on every fact.} Readings are marked \emph{verified at p.\,N}
+  (checked on the image) or \emph{provisional} (inferred from context).
+\item \textbf{Printed citations.} Claude cites the printed page and the equation tag, and
+  determines how the printed page relates to the page index in the file.
+\item \textbf{No guessing.} If a symbol is still ambiguous after cropping, Claude
+  cross-checks it elsewhere in the document or says it is ambiguous.
+\item \textbf{Nothing transfers between files.} A glyph mapping learned in one document is
+  never applied to another, even one from the same authors, journal or book.
+\end{itemize}
+
+\subsection{Container triage}
+Claude identifies each file by its leading bytes, never by its extension, because a file
+called \code{.pdf} can arrive in several different forms:
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{}l l X@{}}
+\toprule
+\textbf{Signature} & \textbf{Container} & \textbf{Handling} \\
+\midrule
+\texttt{\%PDF-} & genuine PDF & Text via \code{pdftotext}, images via \code{pdftoppm}. \\
+\texttt{PK\textbackslash x03\textbackslash x04} & ZIP archive & Usually a paged archive (one JPEG plus one text file per page);
+  unpacked into a writable directory. \\
+UTF-8 text & text-only extraction & No image channel: all mathematics is labelled unverified. \\
+transcription legend & pdf-to-markdown output & Read as source (Section~\ref{sec:p2m}). \\
+\code{.tex}, \code{.md}, \ldots & source & Ground truth; quoted as-is. \\
+JPEG / PNG & page image & Image channel only. \\
+anything else & unknown & Claude stops and reports instead of guessing. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Text-layer failure modes}
+For each file with a text layer, the skill checks for three documented failure modes. They
+can co-occur, in which case the restrictions of all of them apply.
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{}>{\bfseries}l X X@{}}
+\toprule
+\textbf{Mode} & \textbf{What goes wrong} & \textbf{Typical signature} \\
+\midrule
+A\enspace Substitution & A re-encoded font makes glyphs extract as other, legible
+  characters, for example letters standing in for parentheses or braces. &
+  Unusual Latin-1 letters where delimiters belong; equation tags in the substituted form. \\
+B\enspace Geometry loss & The characters are right but their positions are lost: superscripts
+  read as arithmetic, accents detached or dropped, typefaces merged. &
+  Many one- or two-character lines; displayed equations split across lines. \\
+C\enspace OCR & The text layer was recognised from a scan, so it is probabilistic. &
+  OCR font or producer strings; a full-page image on every page. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\noindent The script flags suspects, and Claude confirms each one by comparing a displayed
+equation, an inline formula and a prose paragraph against the page image before relying on it.
+
+\subsection{Page numbering}
+Printed page numbers often differ from the page index in the file. \code{triage.py} detects
+folio patterns (journal e-locators, ``\emph{N of T}'', header and footer numbers), reports
+the dominant offset and the pages that disagree, and flags front matter or appendices with a
+different offset. Claude confirms the offset on the page images before citing printed pages.
+
+\subsection{Workflow: locate, read, quote}
+\begin{enumerate}
+\item \step{Locate} in the text channel: grep a distinctive prose word, or an equation tag in
+  whatever form this particular file uses.
+\item \step{Read} on the image channel: open the page and crop every line that carries a sign,
+  index or accent, upscaled 2.5--4$\times$.
+\item \step{Quote} prose from the text layer only after deterministic repairs, and never under
+  OCR. Quote mathematics only from the image, the source or a transcription, and cite as
+  \emph{Author Year, p.\,N, Eq.\,(X)}.
+\end{enumerate}
+
+\subsection{Reading pdf-to-markdown transcriptions}\label{sec:p2m}
+A document converted with the companion skill \textbf{pdf-to-markdown} arrives as
+\code{NAME.md} plus \code{NAME_figures.pdf}. Claude recognises the transcription by the legend
+on its first line. Because every formula in it was transcribed from page images and
+machine-checked when it was made, Claude reads it as source: it quotes the transcription
+as-is, cites it as \emph{transcription, p.\,N}, and does not re-verify its equations against
+page images in the chat. For figure content, Claude opens the indicated page of the figures
+PDF.
+
+Claude escalates instead of correcting silently in three cases: the transcription conflicts
+with a derivation or a companion paper; it is internally inconsistent; or the profile reports
+a structural defect. In each case Claude reports what the transcription says and asks for the
+original page.
+
+\subsection{Project protocols (optional)}\label{sec:protocol}
+For a Project whose documents you return to often, Claude can write a \emph{project protocol}
+on request. This is a file named \code{pdf_protocol_<project>.md} that caches the facts
+measured for each document:
+\begin{itemize}
+\item its container and text-layer failure modes;
+\item its page offset;
+\item the glyph mappings verified on the image;
+\item project-specific notational traps;
+\item a machine-readable inventory with hashes, sizes, page counts and a prose fingerprint.
+\end{itemize}
+The protocol stores how to \emph{read} the files, not what they \emph{say}.
+
+On the first use of the skill in each session, Claude runs a staleness check against the
+inventory:
+
+\begin{center}
+\small
+\begin{tabularx}{0.85\linewidth}{@{}c X@{}}
+\toprule
+\textbf{Exit} & \textbf{Meaning and action} \\
+\midrule
+0 & Up to date: the cached facts are used. \\
+1 & Stale: Claude reports which files were added, removed or changed, reads them fresh, and offers an update. \\
+3 & Only \emph{probable rendition swaps}: Claude asks whether the files were edited (see below). \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\noindent A Project file can be presented in different containers in different sessions,
+for example as a PDF in one session and as a paged ZIP in the next, without the user changing
+anything. The check recognises every recorded rendition. It flags an unknown one as a
+\emph{probable} swap only when the page count and prose fingerprint agree, and you decide
+whether it is the same document. Source files and transcriptions never make a protocol stale.
+
+Claude cannot write to project knowledge, so the protocol is handed over as a download. You
+upload it to the Project and add a pointer to the Project instructions, for example:
+
+\begin{cmd}
+PDF reading: follow the academic-pdf-reading skill. Project-specific facts are in
+pdf_protocol_<project>.md in project knowledge; run its staleness check on first use
+each session.
+\end{cmd}
+
+\subsection{\texorpdfstring{\texttt{triage.py}}{triage.py}}
+The script \emph{measures}; it never decides what a glyph means. Its subcommands:
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+\textbf{Subcommand} & \textbf{Purpose} \\
+\midrule
+\code{tools} & Lists which helper tools exist in the current environment. \\
+\texttt{profile FILE...} & Reports container, channels, text-layer signals, page-offset candidates and notes. \\
+\texttt{inventory FILE...} & Builds the inventory block for a project protocol. \\
+\texttt{check INVENTORY} & Runs the staleness check (exit codes 0 / 1 / 3; 2 for usage errors). \\
+\texttt{text FILE N} & Prints the text of page N, with \code{--escape} to make control bytes visible. \\
+\texttt{grep PATTERN FILE...} & Searches by regex and reports hits as \emph{file:page:line}. \\
+\texttt{extract FILE -{}-out DIR} & Unpacks a paged ZIP, or writes one text file per PDF page. \\
+\texttt{crop SRC -{}-page N} & Renders a page image, optionally cropped and upscaled. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+% ---------------------------------------------------------------- 3
+\section{Requirements}
+\begin{itemize}
+\item A Claude plan with skills available and \textbf{code execution} enabled in Claude's settings.
+\item Python 3.8 or newer, which the code-execution environment provides.
+\item Optional tools, used when present: poppler-utils (\code{pdfinfo}, \code{pdftotext},
+  \code{pdftoppm}, \code{pdffonts}, \code{pdfimages}), Pillow and pypdf. Without them the skill
+  falls back to alternatives (pypdf or pdfplumber for text, PyMuPDF for rendering, viewing
+  whole pages instead of crops) and tells you when confidence is reduced.
+\item No network access is needed.
+\end{itemize}
+
+% ---------------------------------------------------------------- 4
+\section{Installation}\label{sec:install}
+
+\begin{enumerate}
+\item \step{Package the skill.} The skill is a folder named \code{academic-pdf-reading}
+  containing \code{SKILL.md}, \code{references/} and \code{scripts/}. If you received it as a
+  ZIP, use that file as it is. Otherwise, zip the folder so that the archive contains the
+  folder itself, with \code{SKILL.md} directly inside it:
+\begin{cmd}
+zip -r academic-pdf-reading.zip academic-pdf-reading
+\end{cmd}
+\item \step{Enable code execution} in Claude's settings if it is not already on. Skills run
+  their scripts in the code-execution environment.
+\item \step{Upload.} Open \textsf{Customize \textrightarrow{} Skills}, choose to upload a
+  skill, and select the ZIP.
+\item \step{Turn it on.} Check that \emph{academic-pdf-reading} appears in the list and is
+  enabled.
+\item \step{Verify.} In a new chat, attach a paper and ask, for example: \emph{``Profile this
+  file: what container is it, and what does its text layer get wrong?''} Claude should read the
+  skill and run \texttt{triage.py profile}.
+\end{enumerate}
+
+\begin{note}
+\textbf{Updating.} Keep only one copy installed. Remove the previous version and upload the
+new ZIP in its place. The installed version is recorded in the \code{metadata.version} field
+of \code{SKILL.md}. Existing project protocols remain usable; Claude offers to update one when
+the staleness check or a file change calls for it.
+\end{note}
+
+\paragraph{Without installing the skill.} \code{scripts/build_bundle.py} generates a single
+Markdown file, \code{academic-pdf-reading.md}, that contains \code{SKILL.md}, the
+project-protocol reference and \code{triage.py}. Upload it to a Project's knowledge to use the
+procedure where the skill cannot be installed. The bundle is generated output: edit the skill
+folder and rebuild it, never edit the bundle by hand.
+
+% ---------------------------------------------------------------- 5
+\section{Usage}
+
+You do not need to name the skill. Typical requests that engage it:
+\begin{itemize}
+\item \emph{``What is the sign convention in Eq.\,(12) of the attached paper?''}
+\item \emph{``Quote the definition in Section~3 exactly, with the page number.''}
+\item \emph{``Does the index in Eq.\,(4.17) carry an overbar or not?''}
+\item \emph{``This file is called .pdf but my viewer will not open it. What is it?''}
+\item \emph{``Create a reading protocol for this Project's documents.''}
+  or \emph{``I added two papers; update the protocol.''}
+\end{itemize}
+
+\noindent Answers cite the printed page and equation tag and say how each reading was
+obtained: \emph{verified at p.\,N}, \emph{provisional}, \emph{text-layer reading, unverified},
+or \emph{transcription, p.\,N}.
+
+% ---------------------------------------------------------------- 6
+\section{Limitations}
+\begin{itemize}
+\item \textbf{Image verification costs context.} Checking many equations against page images
+  in one conversation is expensive. For documents you return to often, converting them once
+  with pdf-to-markdown is cheaper.
+\item \textbf{Text-only files cannot be verified.} When no page image exists, mathematics
+  stays labelled unverified, and Claude cross-checks it against another source or re-derives
+  it where possible.
+\item \textbf{OCR text has no deterministic repair.} Even prose from a scanned document is
+  checked on the image before it is quoted.
+\item \textbf{Fingerprints identify documents, not versions.} A revision that changes only a
+  few equations can look identical to the original, which is why probable rendition swaps
+  always end in a question to you.
+\item \textbf{Protocols are uploaded by you.} Project files are read-only to Claude, so every
+  new or updated protocol is delivered as a download.
+\end{itemize}
+
+% ---------------------------------------------------------------- 7
+\section{Working with pdf-to-markdown}
+The two skills are designed as a pair. \textbf{pdf-to-markdown} spends the image-reading
+effort once, at conversion time, and produces a transcription with exact LaTeX mathematics.
+\textbf{academic-pdf-reading} recognises that transcription and reads it as source. It also
+handles the original PDFs, text extractions and paged archives that have not been converted.
+In a project protocol, a document replaced by its transcription is reported as
+\emph{converted}, and its entry shrinks to a short record of the transcription.
+
+% ---------------------------------------------------------------- 8
+\section{Package contents}
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{}l X@{}}
+\toprule
+\textbf{File} & \textbf{Purpose} \\
+\midrule
+\code{SKILL.md} & The reading procedure: policy, triage, access recipes, failure modes, page numbering, workflow. \\
+\code{references/project_protocol.md} & How to create, verify, hand over and update a project protocol, with a template. \\
+\code{scripts/triage.py} & Deterministic measurements: profiling, inventory, staleness check, text, grep, extract, crop. \\
+\code{scripts/build_bundle.py} & Generates the standalone single-file bundle. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\end{document}

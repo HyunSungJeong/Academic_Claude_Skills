@@ -1,0 +1,152 @@
+% Guide: using pdf-to-markdown with academic-pdf-reading
+% Compile with: xelatex pdf-to-markdown_with_academic-pdf-reading.tex  (run twice)
+\documentclass[11pt,a4paper]{article}
+
+\newcommand\skillname{pdf-to-markdown + academic-pdf-reading}
+\newcommand\skillversion{}
+\newcommand\skilldate{12 October 2026}
+
+% ---------------------------------------------------------------- layout
+\usepackage[margin=2.4cm,top=2.7cm,bottom=2.6cm,headheight=14pt]{geometry}
+\usepackage{fontspec}
+\setmainfont{Latin Modern Roman}
+\setsansfont{Latin Modern Sans}
+\setmonofont{DejaVu Sans Mono}[Scale=0.82]
+\usepackage{microtype}
+\usepackage{xcolor}
+\definecolor{accent}{HTML}{1F5F7A}
+\definecolor{codebg}{HTML}{F2F5F7}
+\definecolor{muted}{HTML}{6B7780}
+\usepackage{titlesec}
+\titleformat{\section}{\sffamily\Large\bfseries\color{accent}}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\sffamily\large\bfseries}{\thesubsection}{0.7em}{}
+\titlespacing*{\section}{0pt}{1.5em}{0.5em}
+\titlespacing*{\subsection}{0pt}{1.1em}{0.35em}
+\usepackage{enumitem}
+\setlist{itemsep=0.2em, topsep=0.35em}
+\usepackage{booktabs,tabularx,array}
+\renewcommand\tabularxcolumn[1]{>{\raggedright\arraybackslash}p{#1}}
+\setlength\extrarowheight{1pt}
+\usepackage[most]{tcolorbox}
+\tcbuselibrary{listings}
+\newtcblisting{cmd}{listing only, colback=codebg, colframe=codebg, boxrule=0pt,
+  arc=2pt, left=6pt, right=6pt, top=2pt, bottom=2pt, before skip=6pt, after skip=8pt,
+  listing options={basicstyle=\ttfamily\small, breaklines=true, columns=fullflexible,
+  keepspaces=true, upquote=true, breakindent=1.5em}}
+\newtcolorbox{glance}{enhanced, colback=accent!5, colframe=accent, boxrule=0.6pt,
+  arc=2pt, left=9pt, right=9pt, top=6pt, bottom=6pt,
+  fonttitle=\sffamily\bfseries, title=At a glance}
+\newtcolorbox{note}{enhanced, colback=accent!4, colframe=accent, boxrule=0pt,
+  leftrule=2.5pt, arc=0pt, left=8pt, right=8pt, top=5pt, bottom=5pt,
+  before skip=8pt, after skip=8pt}
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\sffamily\small\color{muted}\skillname}
+\fancyhead[R]{\sffamily\small\color{muted}Guide}
+\fancyfoot[C]{\sffamily\small\color{muted}\thepage}
+\renewcommand\headrulewidth{0.3pt}
+\usepackage[colorlinks=true, linkcolor=accent, urlcolor=accent]{hyperref}
+\hypersetup{pdftitle={Using pdf-to-markdown with academic-pdf-reading},
+  pdfsubject={Claude skills guide}}
+\DeclareUrlCommand\code{\urlstyle{tt}}
+\newcommand\step[1]{\textsf{\textbf{#1}}}
+
+\begin{document}
+
+\thispagestyle{plain}
+\begin{flushleft}
+{\sffamily\small\color{muted}\MakeUppercase{Claude skills \textbullet{} Guide}}\\[4pt]
+{\sffamily\fontsize{22}{27}\selectfont\bfseries\color{accent}Using pdf-to-markdown with\\ academic-pdf-reading}\\[6pt]
+{\sffamily\large Accurate equations at lower token cost\quad\textcolor{muted}{|}\quad \skilldate}\\[2pt]
+{\color{accent}\rule{\linewidth}{0.8pt}}
+\end{flushleft}
+
+\begin{glance}
+\textbf{In one sentence:} convert equation-heavy PDFs to Markdown once with
+\textbf{pdf-to-markdown}, and \textbf{academic-pdf-reading} will read the transcription as
+exact source, so Claude gets image-verified equations without paying for page images in every
+session.
+\end{glance}
+
+\section{The trade-off}
+academic-pdf-reading is accurate because it never takes mathematics from a PDF's text layer.
+Every sign, index, bar, prime and typeface is read from the page image: a full page view,
+then an upscaled crop of each line that matters. That accuracy has a cost, paid on every
+question about an equation and paid again in every new session, because nothing Claude saw in
+one conversation carries over to the next.
+
+\section{Transcribe once, read as source}
+pdf-to-markdown spends the image-reading effort a single time. Claude transcribes every formula
+from page images into LaTeX. Scripts then check the syntax, equation tags and page markers,
+and each displayed equation is proofread side by side against its crop from the PDF. The
+result is a text-only \code{NAME.md} plus \code{NAME_figures.pdf}.
+
+academic-pdf-reading recognises a transcription by its first-line legend and treats it like
+LaTeX source:
+\begin{itemize}
+\item it quotes equations as written, without re-checking them against page images;
+\item it cites pages from the transcription's page markers, including printed page numbers;
+\item it opens the figures PDF only for questions about what a figure shows;
+\item it escalates only when the transcription is contradicted by a derivation or a companion
+  paper, is internally inconsistent, or is structurally defective. Claude never corrects a
+  transcription silently.
+\end{itemize}
+
+\section{What it costs}
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{}l X X@{}}
+\toprule
+ & \textbf{Reading the PDF directly} & \textbf{Reading a transcription} \\
+\midrule
+One-time & none & conversion: about 2{,}500--3{,}000 tokens per page, plus about 1{,}500 per
+  proofreading sheet (four equations each) \\
+Each read of a page & a page image (up to about 1{,}600 tokens) plus crops of the relevant
+  lines, often several thousand tokens in total & the page's Markdown text, typically well
+  under 1{,}000 tokens \\
+Each new session & the same again & the same text cost; no images \\
+\bottomrule
+\end{tabularx}
+\end{center}
+\noindent\textcolor{muted}{\small Per-read figures are approximate and depend on page density
+and on how many lines need cropping.}
+
+\medskip
+\noindent A page costs roughly as much to convert as one or two careful image readings of it.
+Converting therefore pays for itself whenever a document will be consulted for more than a
+handful of equations, or across more than one session. After that, every read is cheaper.
+
+\section{When to convert}
+\textbf{Convert} equation-heavy papers, lecture notes and textbook chapters that you will keep
+returning to, especially documents stored in a Project.
+
+\medskip\noindent\textbf{Leave as PDF} in these cases:
+\begin{itemize}
+\item a one-off question about a single equation, where direct reading is cheaper;
+\item figure-centric documents, since text inside figures is not transcribed;
+\item documents whose layout itself is the question.
+\end{itemize}
+Convert whole books one chapter per conversation.
+
+\section{Workflow}
+\begin{enumerate}
+\item \step{Convert.} In a chat, attach the PDF and ask Claude to convert it to Markdown.
+  For long documents, give a page range.
+\item \step{Download} \code{NAME.md} and, if present, \code{NAME_figures.pdf}.
+\item \step{Upload} both to the Project's knowledge. The figures PDF can be omitted if no
+  figure will need to be seen, because every caption is already in the Markdown.
+\item \step{Keep or remove the original PDF.} If both are present, Claude reads the
+  transcription for content and opens the PDF only for questions about the page itself.
+\item \step{Update the protocol}, if the Project has one. The staleness check reports the
+  document as \emph{converted}; accept Claude's offer to rewrite its entry.
+\end{enumerate}
+
+\begin{note}
+\textbf{Where the trust lies.} A transcription moves verification from reading time to
+conversion time. Displayed equations are proofread against the PDF. Inline math is checked by
+re-reading the strips with mandatory zooms on accents and indices, not by side-by-side sheets.
+Any symbol left ambiguous at conversion is named in the conversion report: keep that report.
+\end{note}
+
+\end{document}

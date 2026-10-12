@@ -2,7 +2,7 @@
 name: pdf-to-markdown
 description: Convert a PDF (papers, notes, textbooks with equations) to text-only Markdown with exact LaTeX math, plus one companion PDF of its figures, machine-checked. Use when asked to convert a PDF to .md.
 metadata:
-  version: "2.4"
+  version: "2.5"
 ---
 
 # PDF → Markdown with exact math
@@ -44,7 +44,9 @@ figure needs to be seen, since every caption is in the Markdown.
    It renders 170 dpi strips `page_NNN_sKK.png`, cut between lines, and prints
    one line per page: whether the page needs images (`img`) or may come from the
    text layer (`text-ok`, no math fonts at all), each strip with its y-range in
-   points, and the printed equation tags. Where the page number printed on a page
+   points, and the printed equation tags (a tag is found flush with the right edge
+   of its own text column, so both columns of a two-column layout are covered;
+   an inline reference such as "Eq. (7)" is not a tag). Where the page number printed on a page
    differs from its PDF page number (a journal article, a book chapter), the line
    reads `pN (printed M):`, and the last line says where those numbers came from
    (PDF page labels, or one offset found in headers/footers). Glance at the first
@@ -54,8 +56,11 @@ figure needs to be seen, since every caption is in the Markdown.
 
    Then extract the figures:
    `python3 SKILL_DIR/scripts/figures.py INPUT.pdf /home/claude/work`
-   It finds each figure from its caption ("Fig. N", "Figure N", "FIG. N"), renders
-   the whole region (vector art and embedded images together, at 200 dpi) to
+   It finds each figure from its caption ("Fig. N", "Figure N", "FIG. N" followed by
+   ".", ":", "|" or a dash, so running text such as "Figure 1(a) shows" is not a
+   caption), keeps the crop inside the caption's column, leaves out page numbers
+   and running heads, trims it to what is actually drawn, and renders the whole
+   region (vector art and embedded images together, at 200 dpi) to
    `figures/figN.png`, and writes `figures/check_figN.png`: the surroundings at low
    resolution with the crop drawn as a red box. `view` each check image (or a
    montage of several) and confirm that nothing of the figure lies outside the box
@@ -108,14 +113,17 @@ figure needs to be seen, since every caption is in the Markdown.
    resolution; a WARNING line means one figure is too large for any page and is
    below the floor on its own (report it, do not shrink it). It stops with an
    error if a placeholder has no image. `check.py` tests the KaTeX syntax of every formula, that every printed
-   equation tag is present exactly once, that no text-layer debris such as
+   equation tag is present exactly once (a `\tag` whose "(N)" is in the text layer
+   but was not detected as a tag is listed for a check by eye, not failed), that no text-layer debris such as
    `(cid:NN)` remains, and that every PDF page has exactly one marker, in order. Fix each finding with `str_replace` on `out/NAME.md`; do
    not rewrite the file.
 5. Proofread displayed equations:
    `python3 SKILL_DIR/scripts/verify_eqs.py "/home/claude/work/out/NAME.md" /home/claude/work`
    Read its full printout first: any `PROBLEM` line is an equation that is not on
    the sheets and must be fixed. Then `view` each `verify/sheet_NN.png`. Each
-   panel shows the PDF crop (top) and the re-typeset transcription (bottom).
+   panel shows the PDF crop (top: the equation's own column, between the nearest
+   prose lines; it may include one short neighbouring line) and the re-typeset
+   transcription (bottom).
    Compare symbol by symbol and fix any difference with `str_replace`. Inline
    math is not covered by the sheets: re-read it on the strips for any line with
    indices or accents.
