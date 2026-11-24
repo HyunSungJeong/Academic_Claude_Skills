@@ -28,7 +28,9 @@ Subcommands
                                   stale; exit 3 if the only differences are
                                   probable rendition swaps (confirm them).
                                   Source files (.tex .md ...), pdf-to-markdown
-                                  transcriptions and their figures PDFs are
+                                  transcriptions and the figures PDFs of
+                                  either (NAME_figures.pdf beside NAME.md or
+                                  NAME.tex) are
                                   reported but never make the protocol stale;
                                   a recorded document replaced by a
                                   transcription of it is reported CONVERTED
@@ -193,19 +195,23 @@ def transcription_pages(text):
 
 
 def figures_owner(path):
-    """For NAME_figures.pdf lying next to a transcription NAME.md: that .md's
-    name; else None. Pairing is by file name, as pdf-to-markdown writes it."""
+    """For NAME_figures.pdf lying next to a transcription NAME.md, or next to a
+    LaTeX source NAME.tex: that file's name; else None. Pairing is by file
+    name, as pdf-to-markdown writes it (and as a cleaned .tex source with its
+    figures split off follows it). A transcription wins if both are present."""
     base = os.path.basename(path)
     if not base.lower().endswith(FIGURES_SUFFIX):
         return None
-    md = os.path.join(os.path.dirname(os.path.abspath(path)), base[:-len(FIGURES_SUFFIX)] + ".md")
-    if os.path.isfile(md) and detect_container(md)[0] == "transcription":
-        return os.path.basename(md)
+    stem = os.path.join(os.path.dirname(os.path.abspath(path)), base[:-len(FIGURES_SUFFIX)])
+    for ext, want in ((".md", "transcription"), (".tex", "source-text")):
+        if os.path.isfile(stem + ext) and detect_container(stem + ext)[0] == want:
+            return os.path.basename(stem + ext)
     return None
 
 
 def file_kind(path):
-    """Container, refined by role: 'figures' for a transcription's figures PDF."""
+    """Container, refined by role: 'figures' for the figures PDF of a
+    transcription or of a .tex source."""
     cont = detect_container(path)[0]
     if cont == "pdf" and figures_owner(path):
         return "figures"
@@ -393,7 +399,8 @@ def notes_for(rec):
                      % ti["figure_files_missing"])
     if rec.get("figures_of"):
         n.append("FIGURES PDF of %s: figure images only (its text is just the labels); "
-                 "nothing to triage. Open the page its placeholder names." % rec["figures_of"])
+                 "nothing to triage. Open the page its placeholder names (for a .tex source, "
+                 "find the figure by its label)." % rec["figures_of"])
     if cont == "text-extraction":
         n.append("TEXT-ONLY EXTRACTION (despite its extension): no image channel exists.")
     if not ch["image"] and cont not in SOURCE_LIKE:
@@ -898,7 +905,8 @@ def check(inv_path, root=None, as_json=False):
     does not count as stale. Source-like means: source text (.tex .md .bib
     .sty .cls), a pdf-to-markdown transcription (recognised by its legend,
     whatever its extension), and the figures PDF lying next to a
-    transcription (NAME_figures.pdf beside NAME.md). A file that changes
+    transcription or a .tex source (NAME_figures.pdf beside NAME.md or
+    NAME.tex). A file that changes
     between a source-like kind and a document kind does count.
 
     A recorded document that is gone while a transcription declaring it as

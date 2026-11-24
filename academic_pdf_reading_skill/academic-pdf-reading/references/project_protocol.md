@@ -44,6 +44,14 @@ because there is nothing to triage:
 - where the original lives, if the user keeps it outside the project.
 Its figures PDF needs no entry of its own beyond the inventory line.
 
+A **`.tex` source with a figures PDF** (`NAME.tex` plus `NAME_figures.pdf`,
+`SKILL.md` §3.4) gets the same short entry: the document it is the source of
+and the PDF it replaced, if any; its equation-tag range and how figures are
+labelled; whether it carries page markers (if not, keep from the replaced
+PDF's entry only the document-level facts that still help citing, such as
+the printed page of each section start, labelled with their origin). Its
+figures PDF needs only the inventory line.
+
 **Does not belong:**
 - *General mechanisms* already in `SKILL.md` — refer to them ("mode B applies")
   instead of restating them. Restated rules drift.
@@ -66,8 +74,8 @@ Work through the files in order; keep notes as you go.
    `pdf_protocol_*.md` automatically).
 2. **Container and channels** for each file, from the profile. Note anything
    surprising (a `.pdf` that is text; a ZIP that is not a paged archive).
-   Transcriptions and their figures PDFs skip steps 3–6: record their entry
-   as §2 says, from the profile's `transcr.` line and notes.
+   Transcriptions, `.tex` sources and their figures PDFs skip steps 3–6:
+   record their entry as §2 says, from the profile's notes.
 3. **Failure modes.** For each file with a text channel, compare against the
    image: one displayed equation, one inline formula, one prose paragraph, and
    one figure caption. Record which of modes A, B, C are present, and where

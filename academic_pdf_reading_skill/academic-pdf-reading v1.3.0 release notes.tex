@@ -5,6 +5,7 @@
 \newcommand\skillname{academic-pdf-reading}
 \newcommand\skillversion{1.3.0}
 \newcommand\skilldate{11 October 2026}
+\newcommand\skillrevised{13 October 2026}
 
 % ---------------------------------------------------------------- layout
 \usepackage[margin=2.4cm,top=2.7cm,bottom=2.6cm,headheight=14pt]{geometry}
@@ -59,7 +60,8 @@
 \begin{flushleft}
 {\sffamily\small\color{muted}\MakeUppercase{Claude skill \textbullet{} Release notes}}\\[4pt]
 {\sffamily\fontsize{26}{30}\selectfont\bfseries\color{accent}\skillname}\\[6pt]
-{\sffamily\large Version \skillversion\quad\textcolor{muted}{|}\quad \skilldate}\\[2pt]
+{\sffamily\large Version \skillversion\quad\textcolor{muted}{|}\quad \skilldate\
+  \textcolor{muted}{(notes revised \skillrevised)}}\\[2pt]
 {\color{accent}\rule{\linewidth}{0.8pt}}
 \end{flushleft}
 
@@ -137,6 +139,8 @@ called \code{.pdf} can arrive in several different forms:
 UTF-8 text & text-only extraction & No image channel: all mathematics is labelled unverified. \\
 transcription legend & pdf-to-markdown output & Read as source (Section~\ref{sec:p2m}). \\
 \code{.tex}, \code{.md}, \ldots & source & Ground truth; quoted as-is. \\
+\texttt{\%PDF-}, \code{NAME_figures.pdf} & figures PDF & Beside a transcription \code{NAME.md}
+  or a source \code{NAME.tex}: figure images only, not triaged; Claude opens it for figure content. \\
 JPEG / PNG & page image & Image channel only. \\
 anything else & unknown & Claude stops and reports instead of guessing. \\
 \bottomrule
@@ -194,6 +198,12 @@ as-is, cites it as \emph{transcription, p.\,N}, and does not re-verify its equat
 page images in the chat. For figure content, Claude opens the indicated page of the figures
 PDF.
 
+The same pairing applies to a LaTeX source whose figures were split off into
+\code{NAME_figures.pdf} beside \code{NAME.tex}. Claude reads the source for content and the
+figures PDF for figure images, finding each figure by the label the source gives it. Such a
+source has no page markers, so Claude cites it by section and equation tag rather than by
+printed page.
+
 Claude escalates instead of correcting silently in three cases: the transcription conflicts
 with a derivation or a companion paper; it is internally inconsistent; or the profile reports
 a structural defect. In each case Claude reports what the transcription says and asks for the
@@ -232,7 +242,8 @@ inventory:
 for example as a PDF in one session and as a paged ZIP in the next, without the user changing
 anything. The check recognises every recorded rendition. It flags an unknown one as a
 \emph{probable} swap only when the page count and prose fingerprint agree, and you decide
-whether it is the same document. Source files and transcriptions never make a protocol stale.
+whether it is the same document. Source files, transcriptions, and the figures PDFs that belong to either never make a
+protocol stale.
 
 Claude cannot write to project knowledge, so the protocol is handed over as a download. You
 upload it to the Project and add a pointer to the Project instructions, for example:

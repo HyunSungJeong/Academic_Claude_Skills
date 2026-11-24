@@ -92,7 +92,8 @@ or a pointer to one in the user's instructions):
    Only *document* files (PDF, ZIP, text extraction, image) can make a protocol
    stale. Source-like files are listed separately and do not: source files
    (`.tex` `.md` `.bib` `.sty` `.cls`, as `source +/-/~`), pdf-to-markdown
-   transcriptions (`transcr. +/~`) and their figures PDFs (`figures +/~`).
+   transcriptions (`transcr. +/~`) and the figures PDFs of either
+   (`figures +/~`; `NAME_figures.pdf` beside `NAME.md` or `NAME.tex`).
    Read them directly, with no update round. Three cases need a mention to the
    user:
    - a removed or renamed source that the protocol names (e.g. in a
@@ -168,7 +169,7 @@ questions 2–3 are settled by looking at page images.
 | UTF-8 text, no NUL, `.pdf` or other extension | text-only extraction | **no image channel**; §3.3 |
 | UTF-8 text whose first line is `<!-- Transcription of NAME.pdf. … -->` (any extension) | transcription | pdf-to-markdown output: read as source; §3.6 |
 | UTF-8 text, `.tex` `.md` `.bib` `.sty` `.cls` | source | read directly; §3.4. A `.txt` is **not** assumed to be source: it may be an extraction |
-| `%PDF-`, named `NAME_figures.pdf`, beside a transcription `NAME.md` | figures PDF | figure images of that transcription; §3.6. The profile reports it as `FIGURES PDF of …` |
+| `%PDF-`, named `NAME_figures.pdf`, beside a transcription `NAME.md` or a source `NAME.tex` | figures PDF | figure images of that transcription (§3.6) or source (§3.4). The profile reports it as `FIGURES PDF of …` |
 | JPEG / PNG | single page image | image channel only |
 | anything else | unknown | **stop and report**; do not guess |
 
@@ -250,6 +251,13 @@ inline formula and one prose paragraph against the image before relying on it.
 `.tex` and `.md` are the ground truth for their own content and may be quoted
 as-is, math included. A `.md` that opens with the transcription legend is a
 pdf-to-markdown transcription; §3.6 says how to read it.
+
+A `.tex` source may come with its figures split off into `NAME_figures.pdf`
+beside `NAME.tex` (the pdf-to-markdown naming). That PDF holds figure images
+and labels only: it pairs with the source, is not triaged, and, like the
+source, never makes a protocol stale. Find a figure by the label the source
+gives it. A source has no page markers unless it says so; cite section and
+equation tag, not a printed page.
 
 ### 3.5 Viewing and cropping
 
